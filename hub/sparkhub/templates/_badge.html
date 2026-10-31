@@ -1,0 +1,1 @@
+<span id="modebadge" class="modebadge state-{{ status.state }}"{% if oob %} hx-swap-oob="true"{% endif %}>{{ status.mode or status.switch and status.switch.target or "no model" }} · {{ status.state }}</span>

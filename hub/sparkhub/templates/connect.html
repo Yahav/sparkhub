@@ -1,0 +1,46 @@
+{% extends "base.html" %}
+{% block title %}Connect · SparkHub{% endblock %}
+{% block main %}
+<h1>Connect a machine</h1>
+{% if has_ca and public_trusted %}<p class="muted">This name uses the local SparkHub certificate. On <a href="{{ public_base }}/connect">{{ public_base }}</a> the certificate is publicly trusted and the certificate step below is not needed.</p>{% endif %}
+<ol class="steps">
+  <li><strong>Make an API key</strong> on the <a href="/keys">Keys</a> page, one per machine. <em>switch</em> scope lets its agents change the mode; <em>infer</em> only uses the models.</li>
+  {% if has_ca %}<li><strong>Trust the SparkHub certificate</strong>{% if public_trusted %} (only for this name){% endif %}: <a href="/clients/ca.crt">download ca.crt</a>. Windows: double-click → Install → Current User → Trusted Root Certification Authorities. macOS: double-click → Keychain Access → open the certificate → Trust → Always Trust. iPhone/iPad: open the file → Settings → Profile Downloaded → Install, then General → About → Certificate Trust Settings → turn it on. Android: Settings → Security → Encryption &amp; credentials → Install a certificate → CA certificate. Linux: <code>sudo cp ca.crt /usr/local/share/ca-certificates/sparkhub.crt &amp;&amp; sudo update-ca-certificates</code> (Firefox: Settings → Certificates → Import). Node tools (OpenCode): <code>NODE_EXTRA_CA_CERTS=/path/to/ca.crt</code>.</li>{% endif %}
+  <li><strong>Get the CLI</strong> (Python 3, nothing to install):
+<pre>mkdir -p ~/.config/sparkhub ~/.local/bin
+curl -fsS {% if has_ca %}--cacert ca.crt {% endif %}-o ~/.local/bin/sparkhub {{ base }}/clients/sparkhub && chmod +x ~/.local/bin/sparkhub
+{% if base != public_base %}export SPARKHUB_URL={{ base }}
+{% endif %}{% if has_ca %}export SPARKHUB_CA=~/.config/sparkhub/ca.crt     # where you saved ca.crt
+{% endif %}sparkhub set-key        # paste the key once; saved to ~/.config/sparkhub/key, readable only by you
+sparkhub status</pre></li>
+  <li><strong>OpenCode:</strong> <code>sparkhub install-opencode</code> writes the skill to <code>~/.config/opencode/skills/sparkhub/</code> and merges the provider (models <code>sparkhub/auto</code>, <code>fast</code>, <code>quality</code>, with their context limits) and the MCP server (tools to check and switch the mode) into <code>~/.config/opencode/opencode.json</code> (a <code>.bak</code> is kept). Both read the key from <code>~/.config/sparkhub/key</code>, so nothing has to be exported per session. Or merge it yourself: <a href="/clients/opencode.json">opencode.json</a>, <a href="/clients/opencode-skill.md">skill</a>.</li>
+  <li><strong>Anything OpenAI-compatible:</strong> base URL <code>{{ base }}/v1</code>, the key as Bearer token, model <code>auto</code> (whatever is loaded), <code>fast</code> or <code>quality</code>; add <code>-thinking</code> for thinking on.</li>
+</ol>
+{% if embed.installed %}{% set es = embed.services %}
+<section class="steps embed-help">
+  <h2>Embeddings <span class="muted">/v1/embeddings · /v1/rerank</span></h2>
+  {% if embed.run_mode == "off" %}<p class="warn">The embedding service is off. {% if s.is_admin %}Turn it on in <a href="/settings?tab=embeddings">Settings → Embeddings</a>.{% else %}An admin can turn it on.{% endif %}</p>{% endif %}
+  <p>For clients that search their own documents (RAG, code search, semantic search): the same base URL and API key as above, OpenAI-compatible. The hub only computes vectors; it stores nothing, so keep the vectors in your own database (pgvector, sqlite-vec, Qdrant, Chroma…).</p>
+  <ul>
+    <li><strong>Embed</strong> with model <code>{{ es.embed.served_name }}</code>: {{ embed.dimensions }} numbers per text, 100+ languages (Hebrew included). Up to {{ es.embed.max_input_tokens or 4096 }} tokens per text, so split long documents into chunks (a few hundred tokens each works well). Send many texts in one request as a list.</li>
+    <li><strong>Queries get an instruction, documents don't:</strong> embed documents as they are, and prefix each search query with <code>Instruct: Given a web search query, retrieve relevant passages that answer the query\nQuery:</code> (a newline before <code>Query:</code>). Use the same model and size for both.</li>
+    <li><strong>Smaller vectors:</strong> <code>"dimensions": 256</code> (32–{{ embed.dimensions }}); <code>"encoding_format": "base64"</code> for compact responses.</li>
+    {% if embed.rerank_enabled %}<li><strong>Rerank</strong> with model <code>{{ es.rerank.served_name }}</code>: sends a query and up to 1000 candidate texts, returns them scored by relevance. Use it on the top 20–50 results of a vector search for better ordering.</li>{% endif %}
+    <li>{% if embed.run_mode == "on-demand" %}It runs on demand: the first request after an idle period takes ~2 s longer. {% endif %}Large embedding requests wait while chat requests are running (at most {{ embed.hold_s }} s).</li>
+  </ul>
+<pre>curl {{ base }}/v1/embeddings -H "Authorization: Bearer $SPARKHUB_KEY" -H "Content-Type: application/json" \
+  -d '{"model": "{{ es.embed.served_name }}", "input": ["first chunk", "second chunk"]}'
+{% if embed.rerank_enabled %}
+curl {{ base }}/v1/rerank -H "Authorization: Bearer $SPARKHUB_KEY" -H "Content-Type: application/json" \
+  -d '{"model": "{{ es.rerank.served_name }}", "query": "how is TLS configured?", "documents": ["...", "..."], "top_n": 3}'
+{% endif %}</pre>
+<pre># Python (pip install openai)
+from openai import OpenAI
+client = OpenAI(base_url="{{ base }}/v1", api_key=KEY)
+docs = client.embeddings.create(model="{{ es.embed.served_name }}", input=chunks)
+query = client.embeddings.create(model="{{ es.embed.served_name }}",
+    input="Instruct: Given a web search query, retrieve relevant passages that answer the query\nQuery:" + question)
+vectors = [d.embedding for d in docs.data]</pre>
+</section>
+{% endif %}
+{% endblock %}

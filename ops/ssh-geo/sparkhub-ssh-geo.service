@@ -1,0 +1,11 @@
+[Unit]
+Description=SparkHub: allow SSH only from one country, the LAN and Tailscale
+Wants=network-online.target
+After=network-online.target nftables.service
+
+[Service]
+Type=oneshot
+ExecStart=/usr/local/sbin/sparkhub-ssh-geo
+
+[Install]
+WantedBy=multi-user.target

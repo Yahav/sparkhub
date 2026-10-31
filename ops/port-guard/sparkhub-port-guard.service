@@ -1,0 +1,12 @@
+[Unit]
+Description=SparkHub: keep guarded ports (8000) closed to the internet
+After=network-pre.target
+Before=docker.service
+
+[Service]
+Type=oneshot
+RemainAfterExit=yes
+ExecStart=/usr/sbin/nft -f /usr/local/lib/sparkhub-port-guard/port-guard.nft
+
+[Install]
+WantedBy=multi-user.target

@@ -1,0 +1,72 @@
+{
+ "fast": {
+  "title": "Fast: qwen36 (Qwen3.6-35B-A3B NVFP4)",
+  "repo": "nvidia/Qwen3.6-35B-A3B-NVFP4",
+  "revision": "1355db6a052410cfd62085d94b58866fd0f2c3c5",
+  "layout": "local-dir",
+  "dir": "${MODELS_DIR}/qwen36",
+  "manifest": "manifests/qwen36.json",
+  "size_gib": 22,
+  "license": {
+   "name": "Apache License 2.0",
+   "url": "https://huggingface.co/Qwen/Qwen3.6-35B-A3B/blob/main/LICENSE",
+   "must_accept": false
+  },
+  "image": "vllm/vllm-openai@sha256:c1c9f6fd5c109ba7f0546a59f5b2f15fb87f64c77782e90a27b648b42a8e67c3"
+ },
+ "quality": {
+  "title": "Quality: Flash (Qwen3.8-Flash-Next NVFP4, b12x kernels)",
+  "repo": "ursuciprian/Qwen3.8-Flash-Next-NVFP4-GDN-MSE",
+  "revision": "03f4a0570496bbe741189f4a2a7d611679e85406",
+  "layout": "hf-cache",
+  "dir": "${HF_CACHE}/hub/models--ursuciprian--Qwen3.8-Flash-Next-NVFP4-GDN-MSE/snapshots/03f4a0570496bbe741189f4a2a7d611679e85406",
+  "extra": {
+   "repo": "local-inference-lab/Qwen3.8-Flash-Next-NVFP4",
+   "revision": "7c4f1bc1a2d6847e0cbc01ac6b823f00251de8dd",
+   "dir": "${HF_CACHE}/hub/models--local-inference-lab--Qwen3.8-Flash-Next-NVFP4/snapshots/7c4f1bc1a2d6847e0cbc01ac6b823f00251de8dd",
+   "why": "the MXFP8 tensors b12x reads (VLLM_B12X_NVFP4_MXFP8_CHECKPOINT); 2 files, not the whole repo"
+  },
+  "runtime_dir": "${MODELS_DIR}/.runtime/quality",
+  "manifest": "manifests/flash-b12x.json",
+  "size_gib": 101,
+  "license": {
+   "id": "qwen-community-1.0",
+   "name": "Qwen Community License 1.0",
+   "url": "https://huggingface.co/ursuciprian/Qwen3.8-Flash-Next-NVFP4-GDN-MSE/blob/03f4a0570496bbe741189f4a2a7d611679e85406/LICENSE",
+   "must_accept": true
+  },
+  "recipe": {
+   "repo": "https://github.com/ursuciprian/qwen3.8-flash-next-1x-dgx-spark",
+   "version": "v2.4.0",
+   "commit": "348ede7",
+   "license": "Apache-2.0"
+  },
+  "image": "ghcr.io/ursuciprian/spark-vllm-b12x@sha256:30fe678ed7ae5d4deb277be137497bcf597e46e829471b7bed24edd4294a84f1"
+ },
+ "embed": {
+  "title": "Embeddings: Qwen3-Embedding-0.6B + Qwen3-Reranker-0.6B (GGUF, llama.cpp)",
+  "dir": "${MODELS_DIR}/embed",
+  "manifest": "manifests/embed.json",
+  "files": [
+   {
+    "repo": "Qwen/Qwen3-Embedding-0.6B-GGUF",
+    "revision": "370f27d7550e0def9b39c1f16d3fbaa13aa67728",
+    "file": "Qwen3-Embedding-0.6B-f16.gguf"
+   },
+   {
+    "repo": "ggml-org/Qwen3-Reranker-0.6B-Q8_0-GGUF",
+    "revision": "a02f48bb4f057028298c21fa033da2b30d7742d5",
+    "file": "qwen3-reranker-0.6b-q8_0.gguf",
+    "why": "Qwen publishes no reranker GGUF; ggml-org is the llama.cpp project"
+   }
+  ],
+  "size_gib": 1.8,
+  "license": {
+   "name": "Apache License 2.0",
+   "url": "https://huggingface.co/Qwen/Qwen3-Embedding-0.6B/blob/main/LICENSE",
+   "must_accept": false
+  },
+  "image": "ghcr.io/ggml-org/llama.cpp@sha256:ffecd9b39e05636081c96e34bf83827fdefe68d887591957be9d416003596885",
+  "image_note": "server-cuda13-b11610, arm64 (built 2026-10-14)"
+ }
+}

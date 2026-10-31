@@ -1,0 +1,38 @@
+{% extends "base.html" %}
+{% block title %}API keys · SparkHub{% endblock %}
+{% block main %}
+<h1>API keys</h1>
+<p class="muted">{% if s.is_admin %}Everyone's keys. Yours have your role's scopes; a key never works above its owner's role, and <em>system</em> keys (made with the CLI, like chat-ui's) belong to nobody.{% else %}Your keys. Their scope can be up to your role ({{ role_labels[s.role] }}).{% endif %}</p>
+{% if new_key %}
+<div class="ok"><p>Key <strong>{{ new_name }}</strong> created. <strong>Copy it now; it is not shown again.</strong></p>
+<p><code class="secret">{{ new_key }}</code></p></div>
+{% endif %}
+{% if error %}<p class="error" role="alert">{{ error }}</p>{% endif %}
+{% if n_dead %}<p class="toggle">{% if show_dead %}<a href="/keys">Hide revoked and expired keys</a>{% else %}<a href="/keys?revoked=1">Show revoked and expired keys ({{ n_dead }})</a>{% endif %}</p>{% endif %}
+<table class="spaced">
+<thead><tr><th>Name</th>{% if s.is_admin %}<th>Owner</th>{% endif %}<th>Scope</th><th>Key</th><th>Created</th><th>Last used</th><th>Expires</th><th>Cap</th><th></th></tr></thead>
+<tbody>
+{% for k in keys %}{% set dead = k.dead %}
+<tr{% if dead %} class="dim"{% endif %}>
+  <td>{{ k.name }}</td>{% if s.is_admin %}<td>{{ k.owner or "system" }}</td>{% endif %}<td>{{ k.scopes }}{% if k.effective != k.scopes %} <span class="warnword" title="capped by the owner's role">→ {{ k.effective }}</span>{% endif %}</td><td><code>{{ k.prefix }}…</code></td>
+  <td>{{ k.created_at|ts }} <span class="muted">{{ k.created_by }}</span></td><td>{{ k.last_used_at|ago }}</td>
+  <td>{{ k.expires_at|ts if k.expires_at else "never" }}</td><td>{{ k.max_concurrency or "default" }}</td>
+  <td>{% if k.revoked_at %}revoked {{ k.revoked_at|ago }}{% elif dead %}expired{% else %}
+    <form method="post" action="/keys/{{ k.id }}/revoke" class="inline" data-confirm="Revoke the key {{ k.name }}{% if s.is_admin and k.owner and k.owner != s.username %} ({{ k.owner }}'s){% endif %}? Anything using it stops working right away; this can't be undone."><input type="hidden" name="csrf" value="{{ s.csrf }}">
+    <button type="submit" class="danger small">Revoke</button></form>{% endif %}</td>
+</tr>
+{% else %}<tr><td colspan="9" class="muted">No active keys{% if n_dead and not show_dead %} (revoked and expired ones are hidden){% endif %}.</td></tr>
+{% endfor %}
+</tbody></table>
+
+<form class="panel" method="post" action="/keys">
+  <input type="hidden" name="csrf" value="{{ s.csrf }}">
+  <h2>New key</h2>
+  <label class="row"><span>Name</span><input name="name" required maxlength="64" placeholder="laptop-opencode"></label>
+  <label class="row"><span>Scope</span><select name="scope">{% for sc in scopes %}<option>{{ sc }}</option>{% endfor %}</select>
+    <small class="muted">{% for sc in scopes %}{{ sc }} = {{ {"infer": "use the models", "switch": "also change the mode", "admin": "everything"}[sc] }}{% if not loop.last %} · {% endif %}{% endfor %}</small></label>
+  <label class="row"><span>Expires after (days)</span><input name="expires_days" inputmode="numeric" size="6" placeholder="never"></label>
+  <label class="row"><span>Max concurrent requests</span><input name="max_concurrency" inputmode="numeric" size="4" placeholder="default"></label>
+  <div class="buttons"><button type="submit">Create key</button></div>
+</form>
+{% endblock %}

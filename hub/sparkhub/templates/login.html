@@ -1,0 +1,15 @@
+{% extends "base.html" %}
+{% block title %}Log in · SparkHub{% endblock %}
+{% block main %}
+<section class="auth">
+  <h1>{% include "_logo.html" %}SparkHub</h1>
+  {% if error %}<p class="error" role="alert">{{ error }}</p>{% endif %}
+  <form method="post" action="/login">
+    <input type="hidden" name="csrf" value="{{ login_csrf }}">
+    <label>Username <input name="username" autocomplete="username" required value="{{ username or '' }}" autofocus></label>
+    <label>Password <input name="password" type="password" autocomplete="current-password" required></label>
+    <label class="check"><input type="checkbox" name="remember" value="1"> Remember this device for 30 days</label>
+    <button type="submit">Continue</button>
+  </form>
+</section>
+{% endblock %}

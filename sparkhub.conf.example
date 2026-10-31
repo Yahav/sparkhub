@@ -1,0 +1,84 @@
+# SparkHub install settings, example. ./install.sh asks the questions and writes sparkhub.conf;
+# copy this to sparkhub.conf instead for an unattended install.
+
+# names the compose project, containers and hub image; another name = a separate install
+INSTANCE="sparkhub"
+# the user the stack runs as (owns data/)
+RUN_UID="1000"
+RUN_GID="1000"
+# group id of /var/run/docker.sock (the hub starts the model containers)
+DOCKER_GID="988"
+TZ="UTC"
+# Hugging Face cache (the Quality weights live here)
+HF_CACHE="/home/you/.cache/huggingface"
+# the Fast weights live in MODELS_DIR/qwen36
+MODELS_DIR="/home/you/models"
+# fast, quality or both
+MODES="fast quality"
+# who reaches the hub: local (this machine and the LAN), tailscale (the tailnet; LAN devices optionally for the dashboard and API) or public (the internet, under your own domain)
+ACCESS="tailscale"
+# the name clients use: NAME.local (local), the tailnet name (tailscale) or your domain (public); chat, Arcane and Grafana work under this name only
+PUBLIC_HOST="spark.your-tailnet.ts.net"
+# more names nginx answers with the local-CA certificate (tailnet name, short host name)
+EXTRA_NAMES="spark spark.local"
+# addresses nginx listens on for HTTPS; 127.0.0.1 is always added. A LAN address the router forwards 443 to makes the dashboard public (password + TOTP)
+LISTEN_ADDRS="100.64.0.10 192.168.1.20"
+HTTPS_PORT="443"
+# ACME challenge + redirect to https; 0 = off
+HTTP_PORT="80"
+# certificate for PUBLIC_HOST: letsencrypt (public), tailscale (tailscale cert for the tailnet name) or local-ca (clients trust data/tls/ca.crt). The other names always use the local CA
+TLS="tailscale"
+# letsencrypt only: http (port 80 must reach this machine) or dns (manual TXT record)
+TLS_CHALLENGE="http"
+# set by the installer once the certificate exists
+LETSENCRYPT_ISSUED="0"
+# set by the installer once the Tailscale certificate exists
+TAILSCALE_CERT_ISSUED="0"
+# local ports (127.0.0.1); change them for a second install on the same machine
+HUB_PORT="8090"
+PROMETHEUS_PORT="9090"
+NODE_EXPORTER_PORT="9100"
+GRAFANA_PORT="3000"
+FAST_PORT="8001"
+QUALITY_PORT="18300"
+# load the last mode when the hub starts (0 for a test install that must not load models)
+AUTOSTART="1"
+# Docker UI at /arcane, signed in through the hub
+ARCANE="1"
+ARCANE_IMAGE="arcane-sparkhub:runtime-basepath"
+# empty = build the pinned fork commit (https://github.com/Yahav/arcane @ d8fc8b0e29cd); or a local checkout or git URL to build instead
+ARCANE_SOURCE=""
+# git ref to build when ARCANE_SOURCE is a URL
+ARCANE_REF=""
+ARCANE_PORT="3552"
+# Arcane's own bridge network
+ARCANE_SUBNET="172.31.250.0/24"
+# address Arcane and chat-ui use to reach nginx (OIDC back channel, /v1): a LISTEN_ADDRS entry, not 127.0.0.1
+ISSUER_ADDR="100.64.0.10"
+# web chat (Hugging Face chat-ui) at /chat for the hub's users, signed in through the hub
+CHATUI="0"
+# built here from chat-ui v0.10.0
+CHATUI_IMAGE="chatui-sparkhub:v0.10.0"
+CHATUI_PORT="3090"
+# chat-ui's own bridge network
+CHATUI_SUBNET="172.31.251.0/24"
+# embedding service at /v1/embeddings and /v1/rerank (Qwen3-Embedding-0.6B + Qwen3-Reranker-0.6B on llama.cpp, 1.8 GiB of weights); run mode on Settings → Models
+EMBEDDINGS="1"
+EMBED_PORT="18310"
+RERANK_PORT="18311"
+# proxy the DGX Dashboard (127.0.0.1:NVIDIA_DASHBOARD_PORT) at /nvidia
+NVIDIA_DASHBOARD="1"
+NVIDIA_DASHBOARD_PORT="11000"
+# license id and date the Quality weights' license was accepted (e.g. qwen-community-1.0 2026-10-28)
+FLASH_LICENSE=""
+# host: allow SSH only from one country + LAN + Tailscale (ops/ssh-geo)
+SSH_GEO="0"
+# two-letter registry country code
+SSH_GEO_COUNTRY=""
+# the LAN, always allowed by SSH_GEO and PORT_GUARD
+LAN_CIDR="192.168.1.0/24"
+# host: drop these ports from the internet, keep them for LAN/Tailscale (ops/port-guard)
+PORT_GUARD="0"
+PORT_GUARD_PORTS="8000"
+# host: boot without the desktop (multi-user.target); frees ~2 GB
+HEADLESS="0"

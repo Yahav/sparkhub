@@ -1,0 +1,112 @@
+{% extends "base.html" %}
+{% block title %}{{ d.name }} · Custom · SparkHub{% endblock %}
+{% block main %}
+{% set f = d.facts %}{% set sp = d.spec %}
+<p class="muted"><a href="/switch#custom">← Models</a></p>
+<h1>{{ d.name }} <span class="pill">{{ d.status }}</span>{% if d.assigned %} <span class="pill">assigned to Custom</span>{% endif %}</h1>
+{% if msg and msg != "imported" %}<p class="ok">{{ msg }}</p>{% elif msg == "imported" %}<p class="ok">Imported. Nothing has been downloaded or run. Review it below.</p>{% endif %}
+{% if error %}<p class="error" role="alert">{{ error }}</p>{% endif %}
+{% if f.description %}<p>{{ f.description }}</p>{% endif %}
+
+{% include "_recipe_status.html" %}
+
+{% if d.update_info %}
+<section class="panel" id="update">
+  <h2>Update available</h2>
+  {% set ui = d.update_info %}
+  <p>{% if ui.recipe_changed is not defined or ui.recipe_changed %}The source file changed upstream (<a href="{{ ui.url }}" target="_blank" rel="noopener noreferrer">{{ ui.commit[:8] }}</a>){% endif %}{% if ui.mods_changed %}{% if ui.recipe_changed %}, and {% endif %}{{ "mod" if ui.mods_changed|length == 1 else "mods" }} {% for n in ui.mods_changed %}<strong>{{ n }}</strong>{{ ", " if not loop.last }}{% endfor %} changed upstream{% endif %} (seen {{ ui.checked_at|ago }}). Importing it creates a new recipe that waits for review{% if ui.mods_changed %}, with the mods at their new versions{% endif %}. This one stays as it is{% if d.assigned %} and stays assigned until you assign the new one{% endif %}.</p>
+  <pre class="diff">{% for line in d.update_info.diff.splitlines() %}<span class="{{ 'add' if line[:1] == '+' and line[:3] != '+++' else 'del' if line[:1] == '-' and line[:3] != '---' else 'ctx' }}">{{ line }}</span>
+{% endfor %}</pre>
+  <form method="post" action="/custom/{{ d.id }}/update" class="buttons"><input type="hidden" name="csrf" value="{{ s.csrf }}">
+    <button type="submit">Import this version for review</button></form>
+</section>
+{% endif %}
+
+{% if d.measured %}{% set m = d.measured %}
+<section class="panel">
+  <h2>Measured on this Spark</h2>
+  {% if m.load_seconds is not none %}<p>Last load {{ m.at|ago }}: ready in {{ m.load_seconds|dur }} · {{ m.mem_used_gib }} GiB memory in use{% if m.kv_tokens %} · KV cache {{ "{:,}".format(m.kv_tokens) }} tokens{% endif %} <span class="muted">(estimated ~{{ f.memory.estimate_gib }} GiB before)</span></p>{% endif %}
+  {% if m.smoke %}<table class="facts"><tbody>
+    {% for k, label in (("tool_call", "Tool call"), ("truncation", "Truncation (max_tokens)"), ("prefix_cache", "Prefix cache")) %}{% set r = m.smoke[k] %}
+    <tr><th>{{ label }}</th><td>{% if r.ok %}pass{% elif r.ok is none %}<span class="muted">n/a</span>{% else %}<span class="errword">fail</span>{% endif %} <span class="muted">· {{ r.detail }}</span></td></tr>{% endfor %}
+  </tbody></table><p class="muted">Smoke checks {{ m.smoke.at|ago }} by {{ m.smoke.by|replace("user:", "") }}.</p>{% endif %}
+</section>
+{% endif %}
+{% if loaded_here %}
+<form method="post" action="/custom/{{ d.id }}/smoke" class="buttons"><input type="hidden" name="csrf" value="{{ s.csrf }}">
+  <button type="submit" class="secondary">Run smoke checks</button>
+  <small class="muted">Sends a tool call, a truncated answer and a repeated long prompt (prefix cache) directly to the loaded model. Takes under a minute; other clients keep working.</small></form>
+{% endif %}
+
+<h2>What will run</h2>
+<table class="facts"><tbody>
+  <tr><th>Image</th><td><code>{{ sp.image }}</code><br><span class="muted">recipe says <code>{{ sp.image_ref }}</code>, pinned to the digest at import · {{ f.image.size_gib }} GiB · built {{ (f.image.created or "?")[:10] }}</span></td></tr>
+  <tr><th>Image build</th><td>{% if f.image.built_by_ci %}has source/revision labels (OCI): {% for k, v in f.image.labels.items() if k.startswith("org.opencontainers.image.") %}<code>{{ k|replace("org.opencontainers.image.", "") }}={{ v }}</code> {% endfor %}{% else %}<span class="warnword">no source or revision labels</span>: probably built on the author's machine, with nothing to tie it to public code{% endif %}
+    <details><summary class="small">last build steps</summary><pre class="logs small">{% for h in f.image.history_tail %}{{ h }}
+{% endfor %}</pre></details></td></tr>
+  <tr><th>Starts with</th><td>{% if "entrypoint" in sp %}entrypoint {% if sp.entrypoint %}<code>{{ sp.entrypoint }}</code>{% else %}cleared{% endif %} (the recipe's executor_config), then {% else %}the image's entrypoint {% if f.image.entrypoint %}<code>{{ f.image.entrypoint|join(" ") }}</code>{% else %}(none){% endif %}, then {% endif %}<code>bash -c</code> with the command below{% if f.image.entrypoint and "entrypoint" not in sp and "vllm" in f.image.entrypoint|join(" ") %} <span class="warnword">— the image's entrypoint runs vllm itself; this recipe will likely not start</span>{% endif %}</td></tr>
+  <tr><th>Model</th><td><code>{{ f.model.repo }}</code> @ <code>{{ f.model.revision }}</code>{% if f.model.resolved %}<br><span class="warnword">the recipe gave {{ "no revision" if not f.model.given_revision else "“" ~ f.model.given_revision ~ "”" }}</span><span class="muted">: pinned to the commit it pointed to at import</span>{% endif %}</td></tr>
+  <tr><th>License</th><td>{{ f.model.license }}{% for e in f.extra_repos %} · {{ e.repo }}: {{ e.license }}{% endfor %} <span class="muted">(from the model card: read the terms before using the model)</span></td></tr>
+  <tr><th>Files</th><td>{{ f.files|length }} files, {{ f.download_gib }} GiB · weights {{ f.model.weights_gib }} GiB{% for e in f.extra_repos %}<br>plus <code>{{ e.repo }}</code> @ <code>{{ e.revision[:12] }}</code>: {{ e.n_files }} files, {{ e.size_gib }} GiB{% if e.patterns %} ({{ e.patterns|join(", ") }}){% endif %} <span class="muted">(the command refers to it; downloaded ahead because the container has no network)</span>{% endfor %}</td></tr>
+  <tr><th>Memory</th><td>~{{ f.memory.estimate_gib }} GiB of {{ f.memory.total_gib }} GiB · {{ f.memory.how }}<br>{% if f.memory.tight %}<span class="warnword">tight</span>: above the ~{{ f.memory.room_gib }} GiB that leaves room for the hub stack and the embedding service. Weights read through the page cache need not all stay in memory, so it may still fit; the first load measures it.{% elif f.memory.fits %}fits: Fast or Quality is unloaded first, so only this model, the hub stack and the embedding service share the memory.{% else %}<span class="errword">likely too big</span>: the estimate is above the Spark's {{ f.memory.total_gib }} GiB.{% endif %} <span class="muted">This is a rough estimate.</span></td></tr>
+  <tr><th>Isolation</th><td>internal Docker network (no route out, no published port) · <code>HF_HUB_OFFLINE=1</code> · Hugging Face cache read-only at <code>/cache/huggingface</code> · its own Docker volume at <code>/cache/runtime</code> for compile caches · all GPUs · <code>--ipc=host</code> · ulimits memlock unlimited, stack 64 MiB (sparkrun's)</td></tr>
+  <tr><th>Mods</th><td>{% if d.mods %}{{ d.mods|length }}: {% for m in d.mods %}<a href="#mod-{{ m.name }}"><code>{{ m.name }}</code></a>{{ ", " if not loop.last }}{% endfor %} <span class="muted">(run before the server, as the image's user, inside the isolated container; see Mods below)</span>{% else %}none{% endif %}</td></tr>
+  <tr><th>Clients use</th><td><code>custom</code> or <code>{{ sp.served_name }}</code> (the hub sets the served name, host and port; the recipe's are replaced)</td></tr>
+  <tr><th>Editable here</th><td>{% if f.editable %}{{ f.editable|join(", ") }}, plus thinking default and default max_tokens (Settings → Generative Models){% else %}only the thinking default and default max_tokens; everything else is fixed in the command{% endif %}</td></tr>
+  {% if f.fixed %}<tr><th>Fixed values</th><td>{% for k, v in f.fixed.items() %}<code>{{ k }}={{ v }}</code> {% endfor %}</td></tr>{% endif %}
+</tbody></table>
+
+{% if f.flags %}
+<div class="warn"><p><strong>Runs code from downloads:</strong></p><ul>{% for x in f.flags %}<li>{{ x }}</li>{% endfor %}</ul></div>
+{% endif %}
+
+<h3>Command</h3>
+<p class="muted">Runs with <code>bash -c</code> in the container. Lines that fetch or run anything beyond the server are highlighted. With no network, a download in the prelude can only succeed if the file is already in the cache, so the hub fetches it ahead of time.</p>
+<pre class="cmd">{% for ln in f.lines %}<span class="{{ 'risky' if ln.risky else '' }}">{{ ln.text }}</span>{% if ln.risky %}  <span class="why">← {{ ln.risky|join(", ") }}</span>{% endif %}
+{% endfor %}</pre>
+{% if d.mods %}
+<h3 id="mods">Mods</h3>
+<p class="muted">sparkrun mods: scripts that patch the container (usually vLLM's own Python files) before the server starts, in this order. Each is pinned to the commit it had at import, and these files are exactly what runs: the hub stores them with the recipe and copies them into every new container. Your approval covers them. Mods that would download anything at launch are refused at import. After the download, the mods run once in a throwaway container with no network, so a mod that fails stops the recipe before it can be assigned.</p>
+{% for m in d.mods %}{% set fm = (f.mods or [])[loop.index0] if f.mods else {} %}
+<section class="panel" id="mod-{{ m.name }}">
+  <h4>{{ loop.index }}. {{ m.name }}</h4>
+  <p>From <a href="{{ m.url }}" target="_blank" rel="noopener noreferrer">{{ m.repo }}/{{ m.dir }}</a> @ <code>{{ m.commit[:12] }}</code>{% if m.ref != m.name %} <span class="muted">(the recipe says <code>{{ m.ref }}</code>)</span>{% endif %} · {{ m.files|length }} file{{ "s" if m.files|length != 1 }}, {{ "{:,}".format(m.files|sum(attribute="size")) }} bytes{% if d.source.kind == "github" and m.repo != d.source.repo %}<br><span class="warnword">from another repository than the recipe</span><span class="muted">: sparkrun looks a mod up there when the recipe's repo doesn't have it</span>{% endif %}</p>
+  {% for x in m.files if x.path == "run.sh" %}<pre class="cmd">{{ x.text }}</pre>{% endfor %}
+  {% for x in m.files if x.path != "run.sh" %}<details><summary><code>{{ x.path }}</code> <span class="muted">{{ "{:,}".format(x.size) }} bytes{% if x.exec %} · executable{% endif %}</span></summary><pre class="logs small">{{ x.text }}</pre></details>
+  {% endfor %}
+</section>
+{% endfor %}
+{% endif %}
+<details><summary>Environment ({{ sp.env|length }})</summary>
+<pre class="logs small">{% for k, v in sp.env.items() %}{{ k }}={{ v }}
+{% endfor %}</pre></details>
+
+<details class="panel" open>
+<summary><strong>Review checklist</strong></summary>
+<ul class="checklist">
+  <li>Is the image pinned by digest (it is), and was it built by public CI or on the author's machine? See <em>Image build</em>.</li>
+  <li>For layers that add code: do the installed packages match public git commits? Diff the image's site-packages against the repo at the stated commit.</li>
+  <li>Precompiled caches in the image (torch AOT, Inductor, Triton) are pickles plus generated Python that load at startup. Scan the pickle globals (torch/triton/vllm only), and check the embedded sources match the image's files.</li>
+  <li>Model repo: no <code>.py</code> files, no <code>auto_map</code>, only safetensors (no <code>.bin</code>/<code>.pt</code> pickles). Checksums are verified at download.</li>
+  <li>Command prelude: what does it download, and from where (highlighted above)?</li>
+  {% if d.mods %}<li>Mods: what does each one change in vLLM, and is it the upstream fix it says it is (its README or comments usually name a vLLM pull request)? A mod from another repository than the recipe deserves the same look.</li>{% endif %}
+  <li>Environment flags the author calls experimental, and their effect on quality.</li>
+  <li>License of the weights.</li>
+</ul>
+</details>
+
+<h2>Source</h2>
+<table class="facts"><tbody>
+  <tr><th>From</th><td>{% if d.source.kind == "github" %}<a href="https://github.com/{{ d.source.repo }}/blob/{{ d.source.commit }}/{{ d.source.path }}" target="_blank" rel="noopener noreferrer">{{ d.source.repo }}/{{ d.source.path }}</a> @ <code>{{ d.source.commit[:12] }}</code>{% if d.source.ref %} <span class="muted">({{ d.source.ref }})</span>{% endif %}{% else %}pasted or uploaded (no update notices){% endif %}</td></tr>
+  <tr><th>Imported</th><td>{{ d.created_at|ts }} by {{ d.created_by|replace("user:", "") }}{% if d.parent_id %} <span class="muted">· update of <a href="/custom/{{ d.parent_id }}">#{{ d.parent_id }}</a></span>{% endif %}</td></tr>
+  <tr><th>Approved</th><td>{% if d.approved_at %}{{ d.approved_at|ts }} by {{ d.approved_by|replace("user:", "") }}{% else %}<span class="muted">not yet</span>{% endif %}</td></tr>
+</tbody></table>
+<details><summary>Recipe YAML as imported</summary><pre class="logs small">{{ d.yaml }}</pre></details>
+
+<details class="act danger-zone"><summary class="small danger">Delete this recipe</summary>
+  <form method="post" action="/custom/{{ d.id }}/delete"><input type="hidden" name="csrf" value="{{ s.csrf }}">
+  <input name="confirm" required autocomplete="off" placeholder="type {{ d.name }}" aria-label="Type {{ d.name }} to confirm">
+  <button class="small danger" type="submit"{% if d.assigned and custom_busy %} disabled{% endif %}>Delete</button>
+  <small class="muted">Removes it from the hub and deletes its runtime cache volume. Downloaded model files stay in the Hugging Face cache.</small></form>
+</details>
+{% endblock %}

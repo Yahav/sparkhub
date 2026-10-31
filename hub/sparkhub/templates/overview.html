@@ -1,0 +1,21 @@
+{% extends "base.html" %}
+{% block title %}Overview · SparkHub{% endblock %}
+{% block head %}<link rel="stylesheet" href="/static/vendor/uPlot.min.css">
+<script src="/static/vendor/uPlot.iife.min.js" defer></script>
+<script src="/static/live.js" defer></script>{% endblock %}
+{% block main %}
+{% if recovery_left is not none %}<p class="warn">Only {{ recovery_left }} recovery codes left. Make new ones on the Users page.</p>{% endif %}
+<div id="live" hx-get="/ui/live" hx-trigger="every 2s" hx-swap="innerHTML">
+{% include "_live.html" %}
+</div>
+<section>
+  <h2>Last 15 minutes</h2>
+  <div class="charts">
+    <figure><figcaption>Generation speed (tok/s): total and per stream</figcaption><div id="ch-speed" class="chart"></div></figure>
+    <figure><figcaption>Requests: running and waiting</figcaption><div id="ch-load" class="chart"></div></figure>
+    <figure><figcaption>KV cache use (%)</figcaption><div id="ch-kv" class="chart"></div></figure>
+    <figure><figcaption>Memory used (GiB) and GPU temperature (°C)</figcaption><div id="ch-mem" class="chart"></div></figure>
+  </div>
+  <p class="muted">History, percentiles and trends against the benchmark are in <a href="/grafana/">Grafana</a>.</p>
+</section>
+{% endblock %}

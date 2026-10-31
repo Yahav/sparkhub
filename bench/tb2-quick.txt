@@ -1,0 +1,17 @@
+# Quick Terminal-Bench set (15 of tb2-full.txt), picked from earlier full runs to spread difficulty:
+# 5 both Fast (qwen36) and Quality (flash-b12x) solved, 2 only Fast, 7 only Quality, 1 neither; most agent times < 10 min.
+nginx-request-logging	system-administration
+openssl-selfsigned-cert	security
+fix-code-vulnerability	security
+pypi-server	software-engineering
+vulnerable-secret	security
+configure-git-webserver	system-administration
+cobol-modernization	software-engineering
+kv-store-grpc	software-engineering
+git-multibranch	system-administration
+sqlite-with-gcov	system-administration
+sparql-university	data-querying
+query-optimize	data-science
+db-wal-recovery	file-operations
+sqlite-db-truncate	debugging
+cancel-async-tasks	software-engineering

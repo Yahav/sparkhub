@@ -1,0 +1,12 @@
+{% extends "base.html" %}
+{% block title %}Models · SparkHub{% endblock %}
+{% block main %}
+<h1>Models</h1>
+<p class="muted">Only one model fits in memory. A switch takes 4–5 minutes and stops everything running on the current model. SparkHub never switches on its own.</p>
+<div id="switch" hx-get="/ui/switch" hx-trigger="every 2s" hx-swap="innerHTML">
+{% include "_switch.html" %}
+</div>
+{% if s.is_admin %}
+{% include "_custom.html" %}
+{% endif %}
+{% endblock %}

@@ -1,0 +1,292 @@
+#!/usr/bin/env python3
+"""sparkhub: check and switch the DGX Spark's model mode from any machine. Standard library only.
+
+Setup (once):
+  sparkhub set-key                   # asks for the API key, saves it to ~/.config/sparkhub/key (only you can read it)
+  sparkhub install-opencode          # OpenCode: provider, MCP tools and skill, all reading that key file
+Optional: SPARKHUB_URL (default: the hub it was downloaded from), SPARKHUB_API_KEY (overrides the key file),
+          SPARKHUB_CA (only for the tailnet name, which uses the local SparkHub certificate).
+
+Commands:
+  sparkhub status                    mode, state, switch progress, active clients, speed, memory
+  sparkhub modes                     both modes and their settings
+  sparkhub switch quality [--drain] [--force] [--no-wait]
+  sparkhub cancel                    cancel a switch in progress (the old mode comes back)
+  sparkhub watch                     live status every 2 s (Ctrl-C to stop)
+  sparkhub set-key                   save the API key to ~/.config/sparkhub/key
+  sparkhub opencode-config           OpenCode provider + MCP config for this hub (JSON to merge)
+  sparkhub install-opencode          write the skill and merge the config into ~/.config/opencode/opencode.json
+"""
+from __future__ import annotations
+
+import argparse
+import json
+import os
+import ssl
+import sys
+import time
+import urllib.error
+import urllib.request
+from pathlib import Path
+
+
+def env(name: str, default: str | None = None) -> str | None:
+    v = os.environ.get(name, default)
+    return os.path.expanduser(v) if v else v
+
+
+URL = (env("SPARKHUB_URL", "https://sparkhub.example") or "").rstrip("/")
+KEY_FILE = Path("~/.config/sparkhub/key").expanduser()
+CA = env("SPARKHUB_CA")
+
+
+def read_key() -> str | None:
+    k = os.environ.get("SPARKHUB_API_KEY")
+    if k:
+        return k.strip()
+    try:
+        return KEY_FILE.read_text().strip() or None
+    except OSError:
+        return None
+
+
+KEY = read_key()
+
+
+def ctx() -> ssl.SSLContext:
+    c = ssl.create_default_context()
+    if CA and Path(CA).exists():
+        c.load_verify_locations(CA)
+    return c
+
+
+def call(method: str, path: str, body: dict | None = None, auth: bool = True, timeout: float = 30) -> tuple[int, dict | str]:
+    headers = {"Accept": "application/json"}
+    if auth:
+        if not KEY:
+            sys.exit("no API key: run `sparkhub set-key` (or set SPARKHUB_API_KEY)")
+        headers["Authorization"] = f"Bearer {KEY}"
+    data = None
+    if body is not None:
+        data = json.dumps(body).encode()
+        headers["Content-Type"] = "application/json"
+    req = urllib.request.Request(URL + path, data=data, method=method, headers=headers)
+    try:
+        with urllib.request.urlopen(req, context=ctx(), timeout=timeout) as r:
+            raw = r.read().decode()
+            code = r.status
+    except urllib.error.HTTPError as e:
+        raw, code = e.read().decode(), e.code
+    except urllib.error.URLError as e:
+        sys.exit(f"cannot reach {URL}: {e.reason}")
+    try:
+        return code, json.loads(raw)
+    except ValueError:
+        return code, raw
+
+
+def fmt_status(st: dict) -> str:
+    lines = [f"mode: {st.get('mode') or 'none'}   state: {st['state']}   ({st['message']})"]
+    sw = st.get("switch")
+    if sw:
+        lines.append(f"switching to {sw['target']}: {sw['elapsed_s']} s of ~{sw.get('expected_load_s')} s"
+                     f"{' (attempt %d)' % sw['attempt'] if sw.get('attempt', 1) > 1 else ''}")
+    if st.get("drain"):
+        lines.append(f"draining: quiet for {st['drain']['quiet_s']} s of {st['drain']['needed_s']} s needed")
+    v = st.get("vllm") or {}
+    if "running" in v:
+        lines.append(f"vLLM: {v.get('running', 0):.0f} running, {v.get('waiting', 0):.0f} waiting, "
+                     f"KV {100 * v.get('kv_usage', 0):.0f} %")
+    cl = (st.get("clients") or {}).get("active") or []
+    if cl:
+        lines.append("active clients: " + ", ".join(f"{c['name']} ({c['inflight']} running, {c['idle_s']:.0f} s idle)"
+                                                    for c in cl))
+    m = st.get("memory") or {}
+    if m:
+        lines.append(f"memory: {m.get('used_gib')} / {m.get('total_gib')} GiB")
+    if st.get("error"):
+        lines.append(f"error: {st['error']}")
+    ls = st.get("last_switch")
+    if ls:
+        lines.append(f"last switch: {ls.get('from')} -> {ls['to']} {ls['result']} ({ls.get('seconds')} s, by {ls.get('by')})")
+    return "\n".join(lines)
+
+
+def cmd_status(a) -> int:
+    code, st = call("GET", "/api/v1/status")
+    if code != 200:
+        print(st)
+        return 1
+    print(json.dumps(st, indent=1) if a.json else fmt_status(st))
+    return 0
+
+
+def cmd_modes(a) -> int:
+    code, d = call("GET", "/api/v1/modes")
+    if code != 200:
+        print(d)
+        return 1
+    for m in d["modes"]:
+        s = m["settings"]
+        print(f"{m['name']:<8} {'(loaded) ' if m['loaded'] else ''}{m['model']}\n"
+              f"         context {s['max_model_len']}, {s['max_num_seqs']} concurrent, thinking "
+              f"{'on' if s['default_thinking'] else 'off'} by default; bench {m['expected'].get('tok_s_single')} tok/s "
+              f"single, ~{m['expected'].get('tok_s_per_agent_4')} per agent with 4")
+    return 0
+
+
+def wait_switch(target: str) -> int:
+    last = ""
+    while True:
+        code, st = call("GET", "/api/v1/mode")
+        if code != 200:
+            print(st)
+            return 1
+        line = f"{st['state']}: {st['message']}"
+        if line != last:
+            print(time.strftime("%H:%M:%S"), line, flush=True)
+            last = line
+        if "switch" not in st and st["state"] in ("ready", "failed", "idle"):
+            return 0 if st["mode"] == target and st["state"] == "ready" else 1
+        time.sleep(3)
+
+
+def cmd_switch(a) -> int:
+    code, d = call("POST", "/api/v1/mode", {"mode": a.mode, "drain": a.drain, "force": a.force})
+    if code == 409 and isinstance(d, dict) and d.get("active"):
+        print(d["error"])
+        for c in d["active"]:
+            print(f"  {c['name']}: {c['inflight']} running, last request {c['idle_s']:.0f} s ago")
+        print(d.get("hint", ""))
+        return 2
+    if code not in (200, 202):
+        print(d)
+        return 1
+    if d.get("result") == "already":
+        print(f"already in {a.mode} mode")
+        return 0
+    print(f"switching to {a.mode}" + (" after draining" if d.get("drain") else "") +
+          f" (a load takes ~{d.get('expected_load_s')} s)")
+    return 0 if a.no_wait else wait_switch(a.mode)
+
+
+def cmd_cancel(a) -> int:
+    code, d = call("POST", "/api/v1/mode/cancel")
+    print(d if code != 200 else f"cancelling; {d.get('previous')} comes back")
+    return 0 if code == 200 else 1
+
+
+def cmd_watch(a) -> int:
+    try:
+        while True:
+            code, st = call("GET", "/api/v1/status")
+            sys.stdout.write("\x1b[2J\x1b[H" + time.strftime("%H:%M:%S  ") + URL + "\n\n" +
+                             (fmt_status(st) if code == 200 else str(st)) + "\n")
+            sys.stdout.flush()
+            time.sleep(2)
+    except KeyboardInterrupt:
+        return 0
+
+
+def cmd_opencode_config(a) -> int:
+    code, d = call("GET", "/clients/opencode.json", auth=False)
+    if code != 200:
+        print(d)
+        return 1
+    print(json.dumps(d, indent=2))
+    return 0
+
+
+def merge(dst: dict, src: dict) -> dict:
+    for k, v in src.items():
+        if isinstance(v, dict) and isinstance(dst.get(k), dict):
+            merge(dst[k], v)
+        else:
+            dst[k] = v
+    return dst
+
+
+def save_key(raw: str) -> None:
+    raw = raw.strip()
+    if not raw.startswith("shk_"):
+        sys.exit("that doesn't look like a SparkHub key (shk_...)")
+    KEY_FILE.parent.mkdir(parents=True, exist_ok=True)
+    fd = os.open(KEY_FILE, os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o600)
+    with os.fdopen(fd, "w") as f:
+        f.write(raw + "\n")
+    try:
+        os.chmod(KEY_FILE, 0o600)
+    except OSError:
+        pass
+    global KEY
+    KEY = raw
+
+
+def cmd_set_key(a) -> int:
+    import getpass
+    save_key(getpass.getpass("SparkHub API key (shk_...): "))
+    code, st = call("GET", "/api/v1/mode")
+    if code != 200:
+        print(f"saved to {KEY_FILE}, but the hub refused it: {st}")
+        return 1
+    print(f"saved to {KEY_FILE}; the hub accepts it (mode: {st.get('mode')})")
+    return 0
+
+
+def cmd_install_opencode(a) -> int:
+    if not KEY_FILE.exists():
+        if os.environ.get("SPARKHUB_API_KEY"):
+            save_key(os.environ["SPARKHUB_API_KEY"])
+            print(f"saved SPARKHUB_API_KEY to {KEY_FILE}")
+        else:
+            cmd_set_key(a)
+    base = Path(os.environ.get("XDG_CONFIG_HOME", "~/.config")).expanduser() / "opencode"
+    code, cfg = call("GET", "/clients/opencode.json", auth=False)
+    code2, skill = call("GET", "/clients/opencode-skill.md", auth=False)
+    if code != 200 or code2 != 200:
+        print("could not fetch the config or skill from the hub")
+        return 1
+    (base / "skills" / "sparkhub").mkdir(parents=True, exist_ok=True)
+    (base / "skills" / "sparkhub" / "SKILL.md").write_text(skill)
+    path = base / "opencode.json"
+    current = json.loads(path.read_text()) if path.exists() else {"$schema": "https://opencode.ai/config.json"}
+    if path.exists():
+        path.with_suffix(".json.bak").write_text(path.read_text())
+    cfg.pop("$schema", None)
+    # the sparkhub provider and MCP entries are replaced as a whole (so removed models don't linger);
+    # everything else in the user's config is kept
+    for section in ("provider", "mcp"):
+        if isinstance(current.get(section), dict):
+            current[section].pop("sparkhub", None)
+    path.write_text(json.dumps(merge(current, cfg), indent=2) + "\n")
+    print(f"wrote {base / 'skills/sparkhub/SKILL.md'} and merged the sparkhub provider and MCP server into {path}")
+    print(f"OpenCode reads the key from {KEY_FILE}; no environment variable needed.")
+    if CA:
+        print(f"For the tailnet name, OpenCode also needs: export NODE_EXTRA_CA_CERTS={CA}")
+    return 0
+
+
+def main() -> int:
+    ap = argparse.ArgumentParser(prog="sparkhub", description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
+    sub = ap.add_subparsers(dest="cmd", required=True)
+    p = sub.add_parser("status")
+    p.add_argument("--json", action="store_true")
+    p.set_defaults(fn=cmd_status)
+    sub.add_parser("modes").set_defaults(fn=cmd_modes)
+    p = sub.add_parser("switch")
+    p.add_argument("mode", choices=["fast", "quality", "custom"])
+    p.add_argument("--drain", action="store_true", help="wait until other clients are quiet")
+    p.add_argument("--force", action="store_true", help="switch now even if others are active (admin key)")
+    p.add_argument("--no-wait", action="store_true", help="return at once instead of following the load")
+    p.set_defaults(fn=cmd_switch)
+    sub.add_parser("cancel").set_defaults(fn=cmd_cancel)
+    sub.add_parser("watch").set_defaults(fn=cmd_watch)
+    sub.add_parser("set-key").set_defaults(fn=cmd_set_key)
+    sub.add_parser("opencode-config").set_defaults(fn=cmd_opencode_config)
+    sub.add_parser("install-opencode").set_defaults(fn=cmd_install_opencode)
+    a = ap.parse_args()
+    return a.fn(a)
+
+
+if __name__ == "__main__":
+    sys.exit(main())

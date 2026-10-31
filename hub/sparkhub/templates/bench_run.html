@@ -1,0 +1,53 @@
+{% extends "base.html" %}
+{% block title %}Benchmark #{{ r.id }} · SparkHub{% endblock %}
+{% block main %}
+<p class="muted"><a href="/bench">← Benchmarks</a></p>
+<h1>Benchmark #{{ r.id }} <span class="muted">{{ r.model_label }}</span></h1>
+<table class="facts"><tbody>
+  <tr><th>Status</th><td>{{ r.status }}{% if r.error %} · <span class="muted">{{ r.error }}</span>{% endif %}</td></tr>
+  <tr><th>Model</th><td>{{ r.mode }} · <code>{{ r.fingerprint }}</code></td></tr>
+  <tr><th>Time</th><td>{{ (r.started_at or r.start_at)|ts }}{% if r.finished_at and r.started_at %} · {{ (r.finished_at - r.started_at)|span }}{% endif %}</td></tr>
+  <tr><th>Agents' internet</th><td>{{ "allowed" if r.internet else "off" }}</td></tr>
+  <tr><th>Started by</th><td>{{ r.created_by|replace("user:", "") }}</td></tr>
+  <tr><th>Summary</th><td>{{ summary }}</td></tr>
+</tbody></table>
+
+{% set res = r.results.suites or {} %}
+{% if res.speed and res.speed.cases %}
+<h2>Speed</h2>
+<div class="scroll"><table>
+<thead><tr><th>Case</th><th>At once</th><th>Prompt</th><th>Per stream</th><th>Total</th><th>First token p50 / p95</th></tr></thead>
+<tbody>{% for c in res.speed.cases %}
+<tr><td>{{ c.label }}</td><td>{{ c.concurrency }}</td><td>{{ "{:,}".format(c.prompt_tokens) }} tokens</td><td>{{ c.per_stream_tps }} tok/s</td><td>{{ c.output_tps }} tok/s</td><td>{{ c.ttft_p50_s }} / {{ c.ttft_p95_s }} s</td></tr>
+{% endfor %}</tbody></table></div>
+{% if res.speed.real_prompt %}<p class="muted">Real prompt (1,200 tokens of technical writing): {{ res.speed.real_prompt.decode_tps }} tok/s decode, {{ res.speed.real_prompt.tok_per_s_incl_prefill }} tok/s including the prompt. Output is {{ res.speed.output_tokens }} tokens per request, prompts are random words (no prefix cache hits).</p>{% endif %}
+{% endif %}
+
+{% for k in ("tb2-quick", "tb2-full") %}{% set t = res[k] %}{% if t %}
+<h2>{{ suites[k].label }}</h2>
+{% if t.error %}<p class="error">{{ t.error }}</p>{% endif %}
+{% if t.tasks %}
+<p>{{ t.solved }} of {{ t.n_tasks }} solved{% if t.cancelled %} (cancelled){% endif %}{% if t.seconds %} · {{ t.seconds|span }}{% endif %}</p>
+<div class="scroll"><table>
+<thead><tr><th>Task</th><th>Result</th><th>Agent time</th><th>Problem</th></tr></thead>
+<tbody>{% for name, x in t.tasks|dictsort %}
+<tr><td>{{ name }}</td><td>{% if x.reward == 1.0 %}solved{% else %}<span class="muted">not solved</span>{% endif %}</td><td>{{ x.agent_s|span if x.agent_s else "–" }}</td><td><small class="muted">{{ x.error or "" }}</small></td></tr>
+{% endfor %}</tbody></table></div>
+{% endif %}
+{% endif %}{% endfor %}
+
+{% for k in ("s2", "s6", "s6-nothink") %}{% set t = res[k] %}{% if t %}
+<h2>{{ suites[k].label }}</h2>
+{% if t.error %}<p class="error">{{ t.error }}</p>{% endif %}
+{% if t.tasks %}
+<div class="scroll"><table>
+<thead><tr><th>Task</th><th>Questions</th><th>Accuracy</th><th>lm-eval's own score</th><th>No answer</th></tr></thead>
+<tbody>{% for name, x in t.tasks|dictsort %}
+<tr><td>{{ name }}</td><td>{{ x.n or "–" }}</td><td>{% if x.accuracy is not none %}{{ "%.1f"|format(x.accuracy * 100) }}%{% else %}–{% endif %}</td>
+<td>{% if x.stock_accuracy is defined and x.stock_accuracy is not none %}{{ "%.1f"|format(x.stock_accuracy * 100) }}%{% else %}–{% endif %}</td><td>{{ x.no_answer if x.no_answer is defined and x.no_answer is not none else "–" }}</td></tr>
+{% endfor %}</tbody></table></div>
+<p class="muted">Accuracy is rescored with a format-tolerant answer extractor; IFEval is lm-eval's strict prompt-level score.</p>
+{% endif %}
+{% endif %}{% endfor %}
+<p class="muted">Logs and per-task files: <code>data/bench/runs/{{ r.id }}/</code> on the Spark, kept 30 days.</p>
+{% endblock %}

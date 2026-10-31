@@ -1,0 +1,10 @@
+[Unit]
+Description=SparkHub: refresh the SSH country allowlist weekly
+
+[Timer]
+OnCalendar=weekly
+RandomizedDelaySec=1h
+Persistent=true
+
+[Install]
+WantedBy=timers.target

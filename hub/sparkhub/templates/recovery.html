@@ -1,0 +1,10 @@
+{% extends "base.html" %}
+{% block title %}Recovery codes · SparkHub{% endblock %}
+{% block main %}
+<section class="auth wide">
+  <h1>{% include "_logo.html" %}Recovery codes</h1>
+  <p>Each code logs you in once if the phone is lost. <strong>They are shown only now.</strong> Store them in your password manager.{% if not first %} The old codes no longer work.{% endif %}</p>
+  <ul class="codes">{% for c in codes %}<li><code>{{ c }}</code></li>{% endfor %}</ul>
+  <p><a class="button" href="/">I have stored them</a></p>
+</section>
+{% endblock %}

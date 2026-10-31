@@ -1,0 +1,11 @@
+{% extends "base.html" %}
+{% block title %}Logs · SparkHub{% endblock %}
+{% block main %}
+<h1>Model logs</h1>
+<form method="get" action="/logs" class="inline">
+  <select name="mode">{% for m in modes %}<option{% if m == mode %} selected{% endif %}>{{ m }}</option>{% endfor %}</select>
+  <select name="tail">{% for n in (100, 300, 1000, 3000) %}<option{% if n == tail %} selected{% endif %}>{{ n }}</option>{% endfor %}</select>
+  <button type="submit">Show</button>
+</form>
+<pre class="logs">{{ text }}</pre>
+{% endblock %}

@@ -1,0 +1,26 @@
+{% if active %}{% set p = active.progress or {} %}
+<section class="panel">
+  <h2>Running: #{{ active.id }} <span class="muted">{{ active.model_label }}</span></h2>
+  <table class="facts"><tbody>
+    <tr><th>State</th><td>{% if active.status == "starting" %}loading {{ active.mode }}…{% else %}running{% endif %}{% if p.suite %} · <strong>{{ suites[p.suite].label if p.suite in suites else p.suite }}</strong>{% if p.n_total %} {{ p.n_done or 0 }}/{{ p.n_total }}{% endif %}{% if p.detail %} <span class="muted">({{ p.detail }})</span>{% endif %}{% endif %}</td></tr>
+    <tr><th>Suites</th><td>{% for k in active.suites %}{% if k in (p.done or []) %}<s>{{ suites[k].label }}</s>{% else %}{{ suites[k].label }}{% endif %}{% if not loop.last %}, {% endif %}{% endfor %}</td></tr>
+    <tr><th>Started</th><td>{{ active.started_at|ts }} · ends about {{ active.ends_at|ts("%H:%M") }}</td></tr>
+    <tr><th>Agents' internet</th><td>{{ "allowed" if active.internet else "off" }}</td></tr>
+  </tbody></table>
+  <form method="post" action="/bench/{{ active.id }}/cancel" class="buttons" data-confirm="Cancel benchmark #{{ active.id }}? What finished so far is kept.">
+    <input type="hidden" name="csrf" value="{{ s.csrf }}">
+    <button type="submit" class="secondary">Cancel</button>
+  </form>
+</section>
+{% endif %}
+{% if upcoming %}
+<section class="panel">
+  <h2>Scheduled</h2>
+  <div class="scroll"><table>
+  <thead><tr><th>Run</th><th>Model</th><th>Start</th><th>Until about</th><th></th></tr></thead>
+  <tbody>{% for r in upcoming %}
+  <tr><td>#{{ r.id }}</td><td>{{ r.model_label }}</td><td>{{ r.start_at|ts }}</td><td>{{ r.ends_at|ts("%H:%M") }}</td>
+  <td><form method="post" action="/bench/{{ r.id }}/cancel" class="inline"><input type="hidden" name="csrf" value="{{ s.csrf }}"><button type="submit" class="small secondary">Cancel</button></form></td></tr>
+  {% endfor %}</tbody></table></div>
+</section>
+{% endif %}

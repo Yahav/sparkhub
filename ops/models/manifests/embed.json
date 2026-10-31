@@ -1,0 +1,12 @@
+{
+ "files": {
+  "Qwen3-Embedding-0.6B-f16.gguf": {
+   "sha256": "421a27e58d165478cc7acb984a688c2aa41404968b0203e7cd743ece44c54340",
+   "size": 1197629632
+  },
+  "qwen3-reranker-0.6b-q8_0.gguf": {
+   "sha256": "22c9979ce4fbcdc5acdc310c6641c32797eff1aa980b8f7a2db8a8ea23429a48",
+   "size": 639153184
+  }
+ }
+}

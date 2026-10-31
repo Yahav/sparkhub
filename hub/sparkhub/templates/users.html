@@ -1,0 +1,62 @@
+{% extends "base.html" %}
+{% block title %}Users · SparkHub{% endblock %}
+{% block main %}
+<h1>Users</h1>
+{% if msg %}<p class="ok">{{ msg }}</p>{% endif %}
+{% if error %}<p class="error" role="alert">{{ error }}</p>{% endif %}
+<p class="muted">Roles: <strong>admin</strong> everything · <strong>switcher</strong> use the models and switch the mode · <strong>inference</strong> use the models. A key never works above its owner's role.</p>
+<div class="scroll"><table class="users">
+<thead><tr><th>User</th><th>Role</th><th>Status</th><th>2FA</th><th>Keys</th><th>Last login</th><th>Last request</th><th>Actions</th></tr></thead>
+<tbody>{% for u in users %}{% set me = u.id == s.user_id %}
+<tr{% if u.disabled %} class="dim"{% endif %}>
+<td>{{ u.username }}{% if me %} <span class="pill">you</span>{% endif %}</td>
+<td>{% if me %}{{ role_labels[u.role] }}{% else %}
+  <form method="post" action="/users/{{ u.id }}/role" class="inline"><input type="hidden" name="csrf" value="{{ s.csrf }}">
+  <select name="role" aria-label="Role of {{ u.username }}">{% for r in roles %}<option value="{{ r }}"{% if r == u.role %} selected{% endif %}>{{ role_labels[r] }}</option>{% endfor %}</select>
+  <button type="submit" class="small secondary">Set</button></form>{% endif %}</td>
+<td>{% if u.disabled %}<strong class="errword">suspended</strong>{% elif u.locked %}<strong class="warnword">locked until {{ u.locked_until|ts("%H:%M") }}</strong>{% elif u.must_change_pw %}<span class="muted">temporary password</span>{% else %}active{% endif %}{% if u.failed_count %} <span class="muted">· {{ u.failed_count }} failed</span>{% endif %}</td>
+<td>{% if u.totp_enabled %}on <span class="muted">· {{ u.recovery_left }} codes</span>{% else %}<span class="muted">not set up</span>{% endif %}</td>
+<td>{{ u.n_keys }}</td>
+<td>{{ u.last_login_at|ago }}</td>
+<td>{{ u.last_request|ago }}</td>
+<td><div class="actions">
+  {% if u.locked %}<form method="post" action="/users/{{ u.id }}/unlock" class="inline"><input type="hidden" name="csrf" value="{{ s.csrf }}"><button class="small" type="submit">Unlock</button></form>{% endif %}
+  {% if not me %}<form method="post" action="/users/{{ u.id }}/{{ 'unsuspend' if u.disabled else 'suspend' }}" class="inline"><input type="hidden" name="csrf" value="{{ s.csrf }}"><button class="small secondary" type="submit">{{ "Unsuspend" if u.disabled else "Suspend" }}</button></form>{% endif %}
+  <form method="post" action="/users/{{ u.id }}/totp" class="inline" data-confirm="{% if me %}Reset your own 2FA? You are logged out and set up an authenticator again at the next login.{% else %}Reset 2FA for {{ u.username }}? They are logged out and set up their authenticator again at the next login; their recovery codes stop working.{% endif %}"><input type="hidden" name="csrf" value="{{ s.csrf }}"><button class="small secondary" type="submit"{% if not u.totp_enabled %} disabled{% endif %}>Reset 2FA</button></form>
+  <details class="act"><summary class="small">Reset password</summary>
+    <form method="post" action="/users/{{ u.id }}/password" data-confirm="{% if me %}Set a new password for yourself? All your sessions end and you log in again.{% else %}Reset the password for {{ u.username }}? They are logged out and must choose their own password at the next login.{% endif %}"><input type="hidden" name="csrf" value="{{ s.csrf }}">
+    <input type="password" name="password" autocomplete="new-password" required minlength="12" placeholder="{{ 'new password' if me else 'temporary password' }}" aria-label="New password for {{ u.username }}">
+    <input type="password" name="again" autocomplete="new-password" required minlength="12" placeholder="again" aria-label="Again">
+    <button class="small" type="submit">Set</button></form></details>
+  {% if not me %}<details class="act"><summary class="small danger">Delete</summary>
+    <form method="post" action="/users/{{ u.id }}/delete"><input type="hidden" name="csrf" value="{{ s.csrf }}">
+    <input name="confirm" required autocomplete="off" placeholder="type {{ u.username }}" aria-label="Type {{ u.username }} to confirm">
+    <button class="small danger" type="submit">Delete user</button>
+    <small class="muted">Revokes their keys; their activity stays in the log.</small></form></details>{% endif %}
+</div></td></tr>
+{% endfor %}</tbody></table></div>
+
+<form class="panel addform" method="post" action="/users">
+  <input type="hidden" name="csrf" value="{{ s.csrf }}">
+  <h2>Add a user</h2>
+  <label class="row"><span>Username</span><input name="username" required maxlength="32" autocomplete="off" pattern="[A-Za-z0-9._\-]+" placeholder="dana"></label>
+  <label class="row"><span>Role</span><select name="role">{% for r in roles %}<option value="{{ r }}"{% if r == "infer" %} selected{% endif %}>{{ role_labels[r] }}</option>{% endfor %}</select></label>
+  <label class="row"><span>Temporary password (12+)</span><input type="password" name="password" required minlength="12" autocomplete="new-password"></label>
+  <label class="row"><span>Again</span><input type="password" name="again" required minlength="12" autocomplete="new-password"></label>
+  <p class="muted">At their first login they choose their own password, then set up 2FA.</p>
+  <div class="buttons"><button type="submit">Add user</button></div>
+</form>
+
+<h2>Sessions</h2>
+<table><thead><tr><th>User</th><th>Status</th><th>From</th><th>Started</th><th>Last seen</th><th>Ends</th><th>Browser</th><th></th></tr></thead><tbody>
+{% for x in sessions %}<tr><td>{{ x.username }}{% if x.current %} <span class="pill">this one</span>{% endif %}</td><td>{{ "logged in" if x.stage == "full" else "waiting for 2FA" }}</td><td>{{ x.ip }}</td><td>{{ x.created_at|ts }}</td><td>{{ x.last_seen|ago }}</td>
+<td>{{ x.expires_at|ts }}{% if x.remember %} <span class="muted">(remembered)</span>{% else %} <span class="muted">or 12 h idle</span>{% endif %}</td><td class="muted trunc">{{ x.ua }}</td>
+<td><form method="post" action="/sessions/{{ x.rid }}/end" class="inline" data-confirm="{% if x.current %}End this session? You are logged out here.{% else %}End {{ x.username }}'s session from {{ x.ip }}? That browser is logged out.{% endif %}"><input type="hidden" name="csrf" value="{{ s.csrf }}"><input type="hidden" name="back" value="users"><button type="submit" class="danger small">End session</button></form></td></tr>{% endfor %}
+</tbody></table>
+
+<h2>Recent login events</h2>
+<table><thead><tr><th>When</th><th>Event</th><th>By</th><th>Detail</th></tr></thead><tbody>
+{% for e in logins %}<tr{% if e.kind in ("login_failed", "account_locked") %} class="warnrow"{% endif %}><td>{{ e.ts|ts("%m-%d %H:%M:%S") }}</td><td>{{ e.kind }}</td><td>{{ e.actor }}</td><td class="muted">{% for k, v in e.detail.items() %}{{ k }}={{ v }} {% endfor %}</td></tr>{% endfor %}
+</tbody></table>
+<p class="muted">From the Spark, when nobody can log in: <code>docker exec -it sparkhub-hub sparkhub-admin user …</code></p>
+{% endblock %}

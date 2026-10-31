@@ -1,0 +1,35 @@
+{
+ "title": "Embeddings",
+ "image": "ghcr.io/ggml-org/llama.cpp@sha256:ffecd9b39e05636081c96e34bf83827fdefe68d887591957be9d416003596885",
+ "image_note": "llama.cpp server-cuda13-b11610 (arm64), at least two weeks old when pinned (2026-10-28); tested on the Spark before pinning",
+ "dimensions": 1024,
+ "services": {
+  "embed": {
+   "title": "Embedding model",
+   "model": "Qwen3-Embedding-0.6B (f16 GGUF)",
+   "served_name": "qwen3-embedding-0.6b",
+   "endpoint": "/v1/embeddings",
+   "host_port": 18310,
+   "weights": "${models_dir}/embed/Qwen3-Embedding-0.6B-f16.gguf",
+   "args": ["--host", "0.0.0.0", "--port", "8080", "-ngl", "99", "-fa", "on",
+            "-m", "/models/Qwen3-Embedding-0.6B-f16.gguf", "--embedding", "--pooling", "last",
+            "-c", "8192", "-np", "2", "-b", "4096", "-ub", "4096", "--alias", "qwen3-embedding-0.6b"],
+   "max_input_tokens": 4096
+  },
+  "rerank": {
+   "title": "Reranker",
+   "model": "Qwen3-Reranker-0.6B (Q8_0 GGUF)",
+   "served_name": "qwen3-reranker-0.6b",
+   "endpoint": "/v1/rerank",
+   "host_port": 18311,
+   "weights": "${models_dir}/embed/qwen3-reranker-0.6b-q8_0.gguf",
+   "args": ["--host", "0.0.0.0", "--port", "8080", "-ngl", "99", "-fa", "on",
+            "-m", "/models/qwen3-reranker-0.6b-q8_0.gguf", "--reranking",
+            "-c", "8192", "-np", "2", "-b", "4096", "-ub", "4096", "--alias", "qwen3-reranker-0.6b"],
+   "max_input_tokens": 4096
+  }
+ },
+ "binds": ["${models_dir}/embed:/models:ro"],
+ "expected": {"start_seconds": 2, "mem_gib": {"embed": 3.1, "rerank": 2.5}, "query_ms": 8, "rerank_20_docs_ms": 145,
+              "batch_tokens_per_s": 26000}
+}

@@ -1,0 +1,51 @@
+{# Overview cards: a tinted glowing icon chip, an uppercase label, meta text on the right, then the caller's body.
+   No inline styles (CSP): sizes come from classes, ring lengths from SVG attributes. #}
+{% set ICONS = {
+  "status": "M3 4h18v7H3zM3 13h18v7H3zM7 7.5h.01M7 16.5h.01",
+  "mode": "M13 2 4 14h7l-1 8 9-12h-7z",
+  "speed": "M4 18a8 8 0 1 1 16 0M12 18l4-5",
+  "requests": "M7 4v16M4 7l3-3 3 3M17 20V4M14 17l3 3 3-3",
+  "kv": "M12 3l9 5-9 5-9-5zM3 13l9 5 9-5",
+  "context": "M4 6h16M4 12h16M4 18h10",
+  "storage": "M4 6c0-1.7 3.6-3 8-3s8 1.3 8 3-3.6 3-8 3-8-1.3-8-3zm0 0v12c0 1.7 3.6 3 8 3s8-1.3 8-3V6M4 12c0 1.7 3.6 3 8 3s8-1.3 8-3",
+  "containers": "M12 2l9 5v10l-9 5-9-5V7zM3 7l9 5 9-5M12 12v10",
+  "cpu": "M7 7h10v10H7zM10 10h4v4h-4zM9 2v3M15 2v3M9 19v3M15 19v3M2 9h3M2 15h3M19 9h3M19 15h3",
+  "memory": "M3 7h18v9H3zM7 16v3M12 16v3M17 16v3M7 10v3M11 10v3M15 10v3",
+  "gpu": "M2 6h20v12H2zM6 10h5v4H6zM14 10h4M14 14h4M5 18v3M10 18v3",
+  "io": "M8 3v18M4 17l4 4 4-4M16 21V3M12 7l4-4 4 4",
+} %}
+
+{% macro icon(name) -%}
+<span class="ico" aria-hidden="true"><svg viewBox="0 0 24 24"><path d="{{ ICONS[name] }}"/></svg></span>
+{%- endmacro %}
+
+{# A full-circle ring meter. pct: 0-100 or none. text=false when the card's value already shows the percentage. #}
+{% macro ring(label, pct, hot=80, crit=92, text=true) -%}
+{% set p = [[pct, 0]|max, 100]|min if pct is number else none %}
+<div class="ring{% if p is not none and p >= crit %} crit{% elif p is not none and p >= hot %} hot{% endif %}"
+     role="meter" aria-label="{{ label }}" aria-valuemin="0" aria-valuemax="100"{% if p is not none %} aria-valuenow="{{ p|round|int }}"{% endif %}>
+  <svg viewBox="0 0 48 48" aria-hidden="true">
+    <circle class="r-track" cx="24" cy="24" r="19" pathLength="100"/>
+    {% if p %}<circle class="r-bar" cx="24" cy="24" r="19" pathLength="100" stroke-dasharray="{{ '%.2f'|format(p) }} 100" transform="rotate(-90 24 24)"/>{% endif %}
+  </svg>
+  {% if text %}<span>{{ (p|round|int ~ "%") if p is not none else "–" }}</span>{% endif %}
+</div>
+{%- endmacro %}
+
+{# A horizontal meter bar (5% steps, CSS classes: no inline styles); amber from hot, red from crit. #}
+{% macro bar(label, pct, hot=80, crit=92) -%}
+{% set p = [[pct, 0]|max, 100]|min if pct is number else none %}
+<div class="progress{% if p is not none and p >= crit %} crit{% elif p is not none and p >= hot %} hot{% endif %}" role="meter" aria-label="{{ label }}" aria-valuemin="0" aria-valuemax="100"{% if p is not none %} aria-valuenow="{{ p|round|int }}"{% endif %}>{% set w = ((p + 2.5) // 5 * 5)|int if p else 0 %}<span class="w{{ 5 if p and not w else w }}"></span></div>
+{%- endmacro %}
+
+{% macro spark(points) -%}
+<svg class="spark" viewBox="0 0 100 24" preserveAspectRatio="none" aria-hidden="true">{% if points %}<polyline points="{{ points }}"/>{% endif %}</svg>
+{%- endmacro %}
+
+{# The card shell; the caller fills the body. tint: violet | cyan | amber | green | pink | blue. #}
+{% macro card(label, icon_name, tint, meta="", extra="", keep_meta=false) -%}
+<article class="card t-{{ tint }}{% if extra %} {{ extra }}{% endif %}">
+  <header class="c-head">{{ icon(icon_name) }}<span class="c-lbl">{{ label }}</span>{% if meta %}<span class="c-meta{% if keep_meta %} keep{% endif %}">{{ meta }}</span>{% endif %}</header>
+  {{ caller() }}
+</article>
+{%- endmacro %}

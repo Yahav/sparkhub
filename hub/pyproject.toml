@@ -1,0 +1,21 @@
+[project]
+name = "sparkhub"
+version = "0.1.0"
+description = "Model server control plane for the DGX Spark"
+requires-python = ">=3.12"
+
+[project.scripts]
+sparkhub-admin = "sparkhub.admin_cli:main"
+
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[tool.setuptools.packages.find]
+include = ["sparkhub*"]
+
+[tool.setuptools.package-data]
+sparkhub = ["templates/*.html", "templates/**/*.html", "static/*", "static/**/*"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]

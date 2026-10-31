@@ -1,0 +1,101 @@
+<section id="custom">
+<h2>Custom</h2>
+{# messages from the Custom forms; the redirects land on #custom #}
+{% if msg %}<p class="ok">{{ msg }}</p>{% endif %}
+{% if error %}<p class="error" role="alert">{{ error }}</p>{% endif %}
+<p class="muted">The third mode, next to Fast and Quality. Import a sparkrun recipe, review it, approve it with a fresh 2FA code, then download and verify it. After that you can assign it to Custom and load it above. Nothing runs before that. When it does run, it is isolated: an internal Docker network with no route out, Hugging Face in offline mode, and the model files mounted read-only.</p>
+
+<section class="panel">
+  <h3>Assigned to Custom</h3>
+  {% if assigned %}
+  <table class="facts"><tbody>
+    <tr><th>Recipe</th><td><a href="/custom/{{ assigned.id }}">{{ assigned.name }}</a></td></tr>
+    <tr><th>Model</th><td><code>{{ assigned.spec.hf_repo }}</code> @ <code>{{ assigned.spec.revision[:12] }}</code></td></tr>
+    <tr><th>Clients use</th><td><code>custom</code> or <code>{{ assigned.spec.served_name }}</code></td></tr>
+    <tr><th>State</th><td>{{ assigned.status }}{% if custom_busy %} · <strong>loaded</strong>{% endif %}</td></tr>
+  </tbody></table>
+  <form method="post" action="/custom/{{ assigned.id }}/unassign" class="buttons" data-confirm="Unassign {{ assigned.name }}? Custom has no model until you assign another recipe.">
+    <input type="hidden" name="csrf" value="{{ s.csrf }}">
+    <button type="submit" class="secondary"{% if custom_busy %} disabled title="Switch to Fast or Quality first"{% endif %}>Unassign</button>
+  </form>
+  {% else %}
+  <p class="muted">Nothing assigned. Custom isn't offered above or to clients until a recipe is downloaded, verified and assigned.</p>
+  {% endif %}
+</section>
+
+<h3>Recipes</h3>
+{% if recipes %}
+<div class="scroll"><table>
+<thead><tr><th>Recipe</th><th>Model</th><th>Status</th><th>Source</th><th>Imported</th><th>Upstream</th></tr></thead>
+<tbody>{% for r in recipes %}
+<tr><td><a href="/custom/{{ r.id }}">{{ r.name }}</a>{% if r.assigned %} <span class="pill">Custom</span>{% endif %}</td>
+<td><code>{{ r.spec.hf_repo }}</code></td>
+<td>{% if r.status == "ready" %}{{ r.status }}{% elif r.status in ("download failed",) %}<span class="errword">{{ r.status }}</span>{% elif r.status == "pending review" %}<span class="warnword">{{ r.status }}</span>{% else %}{{ r.status }}{% endif %}</td>
+<td class="muted">{% if r.source.kind == "github" %}{{ r.source.repo }} @ {{ r.source.commit[:8] }}{% else %}pasted{% endif %}</td>
+<td>{{ r.created_at|ago }} <span class="muted">by {{ r.created_by|replace("user:", "") }}</span></td>
+<td>{% if r.update_info %}<a class="warnword" href="/custom/{{ r.id }}#update">update available</a>{% elif r.source.kind == "github" %}<span class="muted">no change</span>{% else %}<span class="muted">–</span>{% endif %}</td></tr>
+{% endfor %}</tbody></table></div>
+<form method="post" action="/custom/check-updates" class="buttons"><input type="hidden" name="csrf" value="{{ s.csrf }}">
+  <button type="submit" class="secondary small">Check for updates now</button>
+  <small class="muted">Checked daily; last {{ update_checked|ago }}. Recipes imported from GitHub are compared with their source file. An update is only shown, never applied.</small></form>
+{% else %}
+<p class="muted">No recipes yet. Import one below, or browse a registry.</p>
+{% endif %}
+
+<form class="panel addform" id="import" method="post" action="/custom/import" enctype="multipart/form-data">
+  <input type="hidden" name="csrf" value="{{ s.csrf }}">
+  <h3>Import a recipe</h3>
+  <p class="muted">Import only reads metadata from GitHub, Hugging Face and the image registry. It downloads no image or weights and runs nothing. The recipe then waits for your review. Only vLLM recipes that run on one Spark are accepted.</p>
+  <label class="row"><span>GitHub URL of the recipe file</span><input name="url" type="url" size="60" placeholder="https://github.com/owner/repo/blob/main/recipes/model.yaml" autocomplete="off"></label>
+  <label class="row"><span>or upload the YAML</span><input name="file" type="file" accept=".yaml,.yml"></label>
+  <label class="row"><span>or paste it</span><textarea name="yaml" rows="6" cols="60" spellcheck="false" placeholder="recipe_version: &quot;2&quot;&#10;model: …"></textarea></label>
+  <p class="muted">A pasted or uploaded recipe has no source, so it gets no update notices.</p>
+  <div class="buttons"><button type="submit">Import for review</button></div>
+</form>
+
+<h3 id="browse">Browse registries</h3>
+<p class="muted">Lists recipe files from GitHub repositories in sparkrun's registry layout. Browsing reads only text: the recipe files, and the files of any mods they name (to check that the mods don't need the network). Recipes marked <em>needs a mod</em> run sparkrun patch scripts before the server starts; the review page shows them in full. Registries are off until you turn them on.</p>
+<div class="scroll"><table>
+<thead><tr><th>Registry</th><th>On</th><th>Recipes</th><th>Fetched</th><th></th></tr></thead>
+<tbody>{% for g in registries %}
+<tr><td>{{ g.name }} <a class="muted" href="{{ g.url }}" target="_blank" rel="noopener noreferrer">{{ g.url|replace("https://github.com/", "") }}</a>{% if g.error %}<br><span class="errword">{{ g.error }}</span>{% endif %}</td>
+<td>{{ "on" if g.enabled else "off" }}</td>
+<td>{{ g.recipes|length if g.enabled else "–" }}</td>
+<td>{{ g.fetched_at|ago if g.enabled else "–" }}</td>
+<td><div class="actions">
+  <form method="post" action="/custom/registries" class="inline"><input type="hidden" name="csrf" value="{{ s.csrf }}"><input type="hidden" name="url" value="{{ g.url }}">
+    <button type="submit" name="action" value="{{ 'disable' if g.enabled else 'enable' }}" class="small secondary">{{ "Turn off" if g.enabled else "Turn on" }}</button></form>
+  <form method="post" action="/custom/registries" class="inline" data-confirm="Remove the registry {{ g.name }}? Recipes already imported stay."><input type="hidden" name="csrf" value="{{ s.csrf }}"><input type="hidden" name="url" value="{{ g.url }}">
+    <button type="submit" name="action" value="remove" class="small secondary">Remove</button></form>
+</div></td></tr>
+{% endfor %}</tbody></table></div>
+<form method="post" action="/custom/registries" class="buttons">
+  <input type="hidden" name="csrf" value="{{ s.csrf }}">
+  <input name="url" type="url" size="44" placeholder="https://github.com/owner/repo" aria-label="Registry repository URL" autocomplete="off">
+  <button type="submit" name="action" value="add" class="secondary">Add registry</button>
+  <button type="submit" name="action" value="refresh" class="secondary" formnovalidate>Refresh all</button>
+</form>
+
+{% for g in registries if g.enabled and g.recipes %}
+{% set ok = g.recipes|rejectattr("error")|selectattr("problems", "equalto", [])|list %}
+<h4>{{ g.name }} <span class="muted">{{ ok|length }} of {{ g.recipes|length }} can run here</span></h4>
+<div class="scroll"><table class="recipes">
+<thead><tr><th>Recipe</th><th>Model</th><th>Context</th><th>Memory</th><th>License</th><th>Updated</th><th></th></tr></thead>
+<tbody>{% for r in (g.recipes if show_all else ok) %}
+<tr{% if r.error or r.problems %} class="dim"{% endif %}>
+<td>{{ r.name or r.path }}{% if r.mods %} <span class="pill" title="Runs sparkrun mods (patch scripts) before the server starts; their files are shown on the review page">needs {{ "a mod" if r.mods|length == 1 else r.mods|length ~ " mods" }}</span>{% endif %}<br><small class="muted">{{ r.path }}</small>{% if r.mods %}<br><small class="muted">mods: {{ r.mods|join(", ") }}</small>{% endif %}{% if r.description %}<br><small class="muted">{{ r.description }}</small>{% endif %}</td>
+<td>{% if r.model %}<code>{{ r.model }}</code>{% endif %}</td>
+<td>{{ "{:,}".format(r.max_model_len) if r.max_model_len is number else "–" }}</td>
+<td>{% if r.memory %}~{{ r.memory.estimate_gib }} GiB{% if not r.memory.fits %} <span class="errword">too big</span>{% elif r.memory.tight %} <span class="warnword">tight</span>{% endif %}{% else %}–{% endif %}</td>
+<td>{{ r.license or "–" }}</td>
+<td>{{ r.last_modified[:10] if r.last_modified else "–" }}</td>
+<td>{% if r.error %}<span class="errword">{{ r.error }}</span>{% elif r.problems %}<small class="muted">{{ r.problems|join("; ") }}</small>{% else %}
+  <form method="post" action="/custom/import" class="inline"><input type="hidden" name="csrf" value="{{ s.csrf }}">
+  <input type="hidden" name="registry" value="{{ g.url }}"><input type="hidden" name="path" value="{{ r.path }}">
+  <button type="submit" class="small">Import</button></form>{% endif %}</td></tr>
+{% endfor %}</tbody></table></div>
+{% endfor %}
+{% if registries|selectattr("enabled")|list %}
+<p class="toggle"><a href="/switch?all={{ 0 if show_all else 1 }}#browse">{{ "Show only recipes that can run here" if show_all else "Show all recipes, including ones that can't run here" }}</a></p>
+{% endif %}
+</section>

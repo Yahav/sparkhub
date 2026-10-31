@@ -1,0 +1,25 @@
+{% extends "base.html" %}
+{% block title %}Activity · SparkHub{% endblock %}
+{% block main %}
+<h1>Activity</h1>
+{% if not s.is_admin %}<p class="muted">Your requests (made with your API keys).</p>{% endif %}
+<form method="get" action="/activity" class="inline filterbar">Summary for the last
+  <select name="hours">{% for h in (1, 6, 24, 168, 720) %}<option value="{{ h }}"{% if h == hours %} selected{% endif %}>{{ h }} h</option>{% endfor %}</select>
+  <button type="submit" class="small">Show</button></form>
+<table><thead><tr><th>Mode</th><th>Requests</th><th>Prompt tokens</th><th>Cached</th><th>Output tokens</th><th>Avg TTFT</th><th>Avg tok/s</th><th>Thinking on</th><th>Length cut</th><th>Errors</th><th>Disconnects</th><th>Refused</th></tr></thead><tbody>
+{% for r in summary %}<tr><td>{{ r.mode or "–" }}</td><td>{{ r.n }}</td><td>{{ r.p or 0 }}</td><td>{{ r.cached or 0 }}</td><td>{{ r.c or 0 }}</td><td>{{ r.ttft|fmt("{:.2f}") }} s</td><td>{{ r.tps|fmt("{:.0f}") }}</td><td>{{ r.think or 0 }}</td><td>{{ r.length }}</td><td>{{ r.errors }}</td><td>{{ r.disc }}</td><td>{{ r.refused }}</td></tr>{% endfor %}
+</tbody></table>
+<p class="muted">Only numbers are kept: no prompt or answer text is ever stored.</p>
+
+<h2>Requests (latest 200)</h2>
+<div class="scroll"><table class="dense"><thead><tr><th>Time</th>{% if s.is_admin %}<th>User</th>{% endif %}<th>Key</th><th>From</th><th>Mode</th><th>Model</th><th>Stream</th><th>Thinking</th><th>Status</th><th>Outcome</th><th>In</th><th>Out</th><th>Cached</th><th>Wait</th><th>TTFT</th><th>tok/s</th><th>Total</th></tr></thead><tbody>
+{% for r in rows %}<tr{% if r.outcome in ("error", "refused") %} class="warnrow"{% endif %}><td>{{ r.ts|ts("%m-%d %H:%M:%S") }}</td>{% if s.is_admin %}<td>{{ r.user_name or ("system" if r.key_id else "–") }}</td>{% endif %}<td>{{ r.key_name }}</td><td>{{ r.client_ip }}</td><td>{{ r.mode }}</td><td>{{ r.model }}</td><td>{{ "yes" if r.stream else "" }}</td><td>{% if r.thinking %}on{% if r.reasoning_tokens %} ({{ r.reasoning_tokens }}){% endif %}{% elif r.thinking is not none %}<span class="muted">off</span>{% endif %}</td><td>{{ r.status }}</td><td>{{ r.outcome }}</td><td>{{ r.prompt_tokens or "" }}</td><td>{{ r.completion_tokens or "" }}</td><td>{{ r.cached_tokens or "" }}</td><td>{{ r.queue_wait|fmt("{:.2f}") }}</td><td>{{ r.ttft|fmt("{:.2f}") }}</td><td>{{ r.gen_tps|fmt("{:.0f}") }}</td><td>{{ r.duration|fmt("{:.1f}") }}</td></tr>{% endfor %}
+</tbody></table></div>
+
+{% if s.is_admin %}
+<h2>Events (latest 100)</h2>
+<div class="scroll"><table class="dense"><thead><tr><th>Time</th><th>Event</th><th>Who</th><th>Detail</th></tr></thead><tbody>
+{% for e in events %}<tr{% if e.kind in ("load_failed", "model_crashed", "login_failed", "account_locked") or (e.kind == "switch" and e.detail.result != "ok") %} class="warnrow"{% endif %}><td>{{ e.ts|ts("%m-%d %H:%M:%S") }}</td><td>{{ e.kind }}</td><td>{{ e.actor or "" }}</td><td class="muted">{% for k, v in e.detail.items() if k not in ("mem",) %}{{ k }}={{ v }} {% endfor %}</td></tr>{% endfor %}
+</tbody></table></div>
+{% endif %}
+{% endblock %}

@@ -1,0 +1,24 @@
+#!/usr/bin/env bash
+# Refresh and apply the ssh_geo nftables table (SSH only from one country, the LAN and Tailscale).
+# COUNTRY and TRUSTED4 come from /etc/default/sparkhub-ssh-geo (written by ./install.sh); there are no defaults.
+# Runs at boot and weekly (sparkhub-ssh-geo.timer). If the download fails, the last good list is applied.
+set -euo pipefail
+URL=https://ftp.ripe.net/pub/stats/ripencc/delegated-ripencc-extended-latest
+STATE=/var/lib/sparkhub-ssh-geo
+BUILD=/usr/local/lib/sparkhub-ssh-geo/build.py
+if [ -f /etc/default/sparkhub-ssh-geo ]; then set -a; . /etc/default/sparkhub-ssh-geo; set +a; fi
+mkdir -p "$STATE"
+tmp=$(mktemp -d); trap 'rm -rf "$tmp"' EXIT
+if curl -fsS -m 300 -o "$tmp/ripe.txt" "$URL" \
+   && python3 -I "$BUILD" "$tmp/ripe.txt" > "$tmp/ssh-geo.nft" \
+   && nft -c -f "$tmp/ssh-geo.nft"; then
+  install -m 644 "$tmp/ssh-geo.nft" "$STATE/ssh-geo.nft"
+  echo "list refreshed: $(head -1 "$STATE/ssh-geo.nft")"
+elif [ -f "$STATE/ssh-geo.nft" ]; then
+  echo "refresh failed; applying the last good list" >&2
+else
+  echo "refresh failed and there is no previous list; SSH is left unrestricted" >&2
+  exit 1
+fi
+nft -f "$STATE/ssh-geo.nft"
+echo "applied: $(nft list chain inet ssh_geo input | grep -c 'dport 22') rules on tcp/22"

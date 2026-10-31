@@ -1,0 +1,8 @@
+[Unit]
+Description=SparkHub: fetch or renew the Tailscale certificate for the tailnet name
+Wants=network-online.target
+After=network-online.target tailscaled.service
+
+[Service]
+Type=oneshot
+ExecStart=/usr/local/sbin/sparkhub-tailscale-cert

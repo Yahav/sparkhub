@@ -1,0 +1,142 @@
+{% if oob %}{% include "_badge.html" %}{% endif %}
+{% from "_card.html" import card, ring, bar, spark, icon %}
+{% set smp = live.sample %}{% set exp = live.expected %}{% set last = live.last %}{% set tot = live.totals %}
+{% set mem = st.memory %}{% set mem_pct = (100 * mem.used_gib / mem.total_gib) if mem.used_gib is number and mem.total_gib else none %}
+{% set comps = live.components or [] %}
+{% set n_ok = comps|selectattr("running")|list|length %}
+{% set n_bad = comps|selectattr("attention")|list|length %}
+{% set badge = {"ready": "live", "loading": "loading", "draining": "switching", "stopping": "stopping", "failed": "failed"}.get(st.state, st.state or "idle") %}
+<div class="statusrow">
+<section class="board">
+  <header class="b-head">
+    {{ icon("status") }}
+    <div class="b-title">
+      <h1>Spark status</h1>
+      <p><span class="dot state-{{ st.state }}"></span>{{ st.mode or "no model" }} · {{ st.state }}{% if st.state == "ready" and st.loaded_since %} for {{ (st.time - st.loaded_since)|span }}{% endif %}<span class="sep">/</span><span class="muted">{{ live.model or "nothing loaded" }}</span></p>
+    </div>
+    <span class="livebadge state-{{ st.state }}">{{ badge }}</span>
+  </header>
+
+  {% set busy = st.state in ("loading", "draining", "stopping") %}
+  <div class="cards c3">
+    {% call card("Mode", "mode", "violet", (live.ctx_max|kilo ~ " context") if live.ctx_max else "", "wide current state-" ~ st.state) %}
+      <div class="c-val mode">{% if busy %}<span class="spinner" role="status" aria-label="{{ st.state }}"></span>{% endif %}{{ st.mode or ("loading" if busy else "none") }}</div>
+      <div class="c-cap"><span>{% if st.state == "ready" and last %}last answer {{ "{:,}".format(last.completion_tokens or 0) }} tokens at {{ last.gen_tps|fmt("{:.1f}") }} tok/s{% elif st.state != "ready" %}{% if not busy %}{{ st.state }} · {% endif %}{{ st.message }}{% else %}no answers yet{% endif %}</span></div>
+      {% if st.switch %}
+        {% set pct = [100, (100 * st.switch.elapsed_s / (st.switch.expected_load_s or 300))|int]|min %}
+        <div class="progress" role="progressbar" aria-valuenow="{{ pct }}" aria-valuemin="0" aria-valuemax="100"><span class="w{{ (pct // 5) * 5 }}"></span></div>
+        <div class="c-cap"><span>switching to {{ st.switch.target }} · {{ st.switch.elapsed_s|dur }} of ~{{ st.switch.expected_load_s|dur }}{% if st.switch.attempt > 1 %} · attempt {{ st.switch.attempt }}{% endif %}</span></div>
+      {% endif %}
+      {% if st.error %}<div class="c-cap error">{{ st.error }}</div>{% endif %}
+      <div class="c-foot api">API <code>{{ live.api }}</code> <span class="muted">OpenAI-compatible</span></div>
+    {% endcall %}
+
+    {% call card("Requests", "requests", "blue", "now") %}
+      <div class="c-val">{{ st.vllm.running|fmt("{:.0f}") }}<small>running</small></div>
+      <div class="c-cap"><span>{{ st.vllm.waiting|fmt("{:.0f}") }} waiting in vLLM</span><b>{{ st.clients.inflight }} via hub</b></div>
+      {{ spark(live.spark.req) }}
+    {% endcall %}
+  </div>
+
+  <div class="cards c3">
+    {% call card("Speed", "speed", "blue", "now") %}
+      {% if smp.gen_tps %}
+      <div class="c-val">{{ smp.gen_tps|fmt("{:.0f}") }}<small>tok/s</small></div>
+      <div class="c-cap"><span>{{ smp.per_stream_tps|fmt("{:.0f}") }} per stream</span>{% if exp.tok_s_single %}<b>bench {{ exp.tok_s_single }}</b>{% endif %}</div>
+      {% else %}
+      <div class="c-val">–<small>tok/s</small></div>
+      <div class="c-cap"><span>nothing generating</span>{% if exp.tok_s_single %}<b>bench {{ exp.tok_s_single }}</b>{% endif %}</div>
+      {% endif %}
+      {{ spark(live.spark.tps) }}
+    {% endcall %}
+
+    {% call card("Context", "context", "blue", "now") %}
+      {% set cn = live.ctx_now %}
+      {% if cn %}
+      <div class="c-val">{{ cn.tokens|kilo }}{% if live.ctx_max %}<small>/ {{ live.ctx_max|kilo }}</small>{% endif %}</div>
+      {% if live.ctx_max %}{% set cp = [100, (100 * cn.tokens / live.ctx_max)|int]|min %}<div class="progress"><span class="w{{ (cp // 5) * 5 }}"></span></div>{% endif %}
+      <div class="c-cap"><span>{% if cn.running > 1 %}average of {{ cn.running }} running requests{% else %}the running request{% endif %}</span></div>
+      {% else %}<div class="c-val">–{% if live.ctx_max %}<small>/ {{ live.ctx_max|kilo }}</small>{% endif %}</div><div class="c-cap"><span>no request running</span></div>{% endif %}
+    {% endcall %}
+
+    {% call card("KV cache", "kv", "blue", "vLLM") %}
+      {% set kvp = (st.vllm.kv_usage * 100) if st.vllm.kv_usage is number else none %}
+      <div class="c-row"><div class="c-val">{{ kvp|fmt("{:.0f}") }}<small>%</small></div>{{ ring("KV cache", kvp, 85, 95, false) }}</div>
+      <div class="c-cap"><span>prefix hits</span><b>{{ ((st.vllm.prefix_hits_total / st.vllm.prefix_queries_total) * 100)|fmt("{:.0f}") if st.vllm.prefix_queries_total is number and st.vllm.prefix_queries_total > 0 else "–" }} %</b></div>
+      {{ spark(live.spark.kv) }}
+    {% endcall %}
+  </div>
+
+  {# hardware: the same shape in every box: value, bar, one caption line, history #}
+  <div class="cards c5 hw">
+    {% call card("GPU", "gpu", "pink") %}
+      <div class="c-val">{{ st.gpu.util_pct|fmt("{:.0f}") }}<small>%</small></div>
+      {{ bar("GPU", st.gpu.util_pct, 101, 101) }}
+      <div class="c-cap"><span><b class="{% if st.gpu.temp_c is number and st.gpu.temp_c >= 90 %}errword{% elif st.gpu.temp_c is number and st.gpu.temp_c >= 80 %}warnword{% endif %}" role="meter" aria-label="GPU temp" aria-valuemin="0" aria-valuemax="100"{% if st.gpu.temp_c is number %} aria-valuenow="{{ st.gpu.temp_c|round|int }}"{% endif %}>{{ st.gpu.temp_c|fmt("{:.0f}") }} °C</b> · {{ st.gpu.power_w|fmt("{:.0f}") }} W</span></div>
+      {{ spark(live.spark.gpu) }}
+    {% endcall %}
+
+    {% call card("Memory", "memory", "pink") %}
+      <div class="c-val">{{ mem.used_gib|fmt("{:.0f}") }}<small>GiB</small></div>
+      {{ bar("Memory", mem_pct, 88, 95) }}
+      <div class="c-cap"><span>of {{ mem.total_gib|fmt("{:.0f}") }} GiB{% if mem.swap_used_gib is number and mem.swap_used_gib >= 1 %} · <b class="warnword">swap {{ mem.swap_used_gib|fmt("{:.0f}") }} GiB</b>{% endif %}</span></div>
+      {{ spark(live.spark.mem) }}
+    {% endcall %}
+
+    {% call card("Processor", "cpu", "pink") %}
+      <div class="c-val">{{ st.cpu.pct|fmt("{:.0f}") }}<small>%</small></div>
+      {{ bar("CPU", st.cpu.pct, 80, 92) }}
+      <div class="c-cap"><span title="1-minute load average on {{ st.cpu.cores }} cores">load avg {{ st.cpu.load1|fmt("{:.1f}") }}</span></div>
+      {{ spark(live.spark.cpu) }}
+    {% endcall %}
+
+    {% call card("Disk I/O", "io", "pink") %}
+      {% set rd, wr = st.disk.read_mbs, st.disk.write_mbs %}
+      <div class="c-val">{{ (rd + wr)|fmt("{:.0f}") if rd is number and wr is number else "–" }}<small>MB/s</small></div>
+      <div class="bar-gap"></div>
+      <div class="c-cap"><span>read {{ rd|fmt("{:.0f}") }} · write {{ wr|fmt("{:.0f}") }}</span></div>
+      {{ spark(live.spark.io) }}
+    {% endcall %}
+
+    {% call card("Storage", "storage", "pink") %}
+      <div class="c-val">{{ st.disk.pct|fmt("{:.0f}") }}<small>%</small></div>
+      {{ bar("Storage", st.disk.pct, 85, 95) }}
+      <div class="c-cap"><span>{{ (st.disk.total_gib - st.disk.used_gib)|fmt("{:,.0f}") if st.disk.total_gib is number and st.disk.used_gib is number else "–" }} GiB free</span></div>
+    {% endcall %}
+  </div>
+</section>
+<section class="board components">
+  <header class="b-head">
+    {{ icon("containers") }}
+    <div class="b-title">
+      <h1>Services</h1>
+      <p>{% if live.components is none %}Docker did not answer{% else %}{% if comps %}<span class="c-dots" role="img" aria-label="{{ n_ok }} of {{ comps|length }} running">{% for c in comps %}<i class="lv-{{ c.level }}" title="{{ c.label }}"></i>{% endfor %}</span>{% endif %}{% if n_bad %}<span class="warnword">{{ n_bad }} need attention</span>{% endif %}{% endif %}</p>
+    </div>
+  </header>
+  {% if live.components is none %}<p class="muted">Docker did not answer.</p>
+  {% elif not live.components %}<p class="muted">No containers found.</p>
+  {% else %}<ul>{% for c in live.components %}
+    <li class="comp lv-{{ c.level }}" title="{{ c.name }}"><span class="dot"></span><span class="c-name">{{ c.label }}</span><span class="c-state">{{ c.text }}</span></li>
+  {% endfor %}</ul>{% endif %}
+</section>
+</div>
+<section class="requests">
+  <h2>Recent requests{% if not s.is_admin %} <span class="muted">yours</span>{% endif %}</h2>
+  {% if live.latest %}
+  <div class="scroll"><table class="dense"><thead><tr><th>Time</th>{% if s.is_admin %}<th>User</th>{% endif %}<th>Key</th><th>Mode</th><th>Status</th><th class="num">Prompt</th><th class="num">Reused</th><th class="num">Prefill</th><th class="num">Output</th><th class="num">Decode</th><th class="num">Duration</th></tr></thead><tbody>
+  {% for r in live.latest %}<tr><td>{{ r.ts|ts("%H:%M:%S") }}</td>{% if s.is_admin %}<td>{{ r.user_name or "system" }}</td>{% endif %}<td>{{ r.key_name }}</td><td>{{ r.mode or "–" }}</td><td><span class="st st-{{ r.label }}">{{ r.label }}</span></td>
+    <td class="num">{{ "{:,}".format(r.prompt_tokens) if r.prompt_tokens else "–" }}</td><td class="num">{{ "{:,}".format(r.cached_tokens) if r.cached_tokens else "0" }}</td>
+    <td class="num">{{ r.prefill_tps|fmt("{:,.0f}") }}</td><td class="num">{{ "{:,}".format(r.completion_tokens) if r.completion_tokens else "–" }}</td>
+    <td class="num">{{ r.gen_tps|fmt("{:.1f}") }}</td><td class="num">{{ r.duration|fmt("{:.1f}") }} s</td></tr>{% endfor %}
+  </tbody></table></div>
+  {% if tot %}<p class="muted totals">Since {{ st.mode }} loaded {{ tot.since|ago }}: {{ "{:,}".format(tot.n) }} requests · {{ "{:,}".format(tot.p or 0) }} prompt tokens read{% if tot.prefill_tps %} at {{ tot.prefill_tps|fmt("{:,.0f}") }} tok/s{% endif %} ({{ "{:,}".format(tot.c or 0) }} reused) · {{ "{:,}".format(tot.o or 0) }} written{% if tot.decode_tps %} at {{ tot.decode_tps|fmt("{:.1f}") }} tok/s{% endif %} · <a href="/activity">all activity</a></p>{% endif %}
+  {% else %}<p class="muted">No requests yet.</p>{% endif %}
+</section>
+<section class="clients">
+  <h2>Clients <span class="muted">active in the last {{ live.window_min }} min</span></h2>
+  {% if st.clients.active %}
+  <table><thead><tr><th>Key</th><th>In flight</th><th>Waiting</th><th>Last request</th></tr></thead><tbody>
+  {% for c in st.clients.active %}<tr><td>{{ c.name }}</td><td>{{ c.inflight }}</td><td>{{ c.waiting }}</td><td>{{ c.idle_s|dur }} ago</td></tr>{% endfor %}
+  </tbody></table>
+  {% else %}<p class="muted">Nobody is using the model right now.</p>{% endif %}
+</section>

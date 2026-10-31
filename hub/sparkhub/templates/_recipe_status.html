@@ -1,0 +1,41 @@
+{% from "_card.html" import bar %}
+<section class="panel" id="rstatus"{% if d.status == "downloading" %} hx-get="/ui/custom/{{ d.id }}" hx-trigger="every 2s" hx-swap="outerHTML"{% endif %}>
+{% if d.status == "pending review" %}
+  <h2>Approve</h2>
+  <p>Read the facts below first. Approving means you accept running this image and these model files on the Spark. It says nothing about whether they are safe. The checklist at the bottom lists what to look at.</p>
+  <form method="post" action="/custom/{{ d.id }}/approve">
+    <input type="hidden" name="csrf" value="{{ s.csrf }}">
+    <label class="row"><span>I went through the review and the checklist</span><input type="checkbox" name="ack" required></label>
+    <label class="row"><span>Authenticator code</span><input name="code" inputmode="numeric" autocomplete="one-time-code" pattern="[0-9 ]{6,7}" size="8" required></label>
+    <div class="buttons"><button type="submit">Approve</button></div>
+    <p class="muted">Approval is recorded in the event log with the image digest and model revision.</p>
+  </form>
+{% elif d.status == "downloading" %}
+  {% set pg = d.progress or {} %}
+  <h2>Downloading and verifying <span class="spinner" role="status" aria-label="downloading"></span></h2>
+  {% set pct = (100 * pg.done / pg.total) if pg.total else 0 %}
+  {{ bar("Download progress", pct, 101, 101) }}
+  <p class="muted">{% if pg.step == "image" %}Image: pulling by digest{% elif pg.step == "weights" %}Model files: downloading and checking sha256{% elif pg.step == "mods" %}Mods: test run in a container with no network{% else %}Starting{% endif %}{% if pg.total %} · {{ "%.1f"|format(pg.done / 2**30) }} of {{ "%.1f"|format(pg.total / 2**30) }} GiB{% endif %}{% if pg.file %} · {{ pg.file }}{% endif %}</p>
+  <p class="muted">You can leave this page; ntfy sends a notification when the download finishes or fails.</p>
+{% elif d.status in ("approved, not downloaded", "download failed") %}
+  <h2>Download and verify</h2>
+  {% if d.download and d.download.error %}<p class="error" role="alert">Last attempt failed: {{ d.download.error }}</p>{% endif %}
+  <p>Pulls the image by its digest ({{ d.facts.image.size_gib }} GiB compressed) and confirms the digest locally. Then downloads {{ d.facts.files|length }} model files ({{ d.facts.download_gib }} GiB) at the pinned revisions and checks each against the sha256 that Hugging Face publishes. Files already in the cache are checked rather than downloaded again.{% if d.mods %} Then runs the {{ d.mods|length }} mod{{ "s" if d.mods|length != 1 }} once in a throwaway container with no network.{% endif %} If any check fails, the recipe can't be loaded.</p>
+  <form method="post" action="/custom/{{ d.id }}/download" class="buttons"><input type="hidden" name="csrf" value="{{ s.csrf }}">
+    <button type="submit">{{ "Retry download" if d.download else "Download and verify" }}</button></form>
+{% elif d.status == "ready" %}
+  <h2>Ready</h2>
+  <p>Image and {{ d.download.verified }} model files verified {{ d.download.at|ago }} ({{ d.download.downloaded or 0 }} downloaded, {{ d.download.present or 0 }} already in the cache).{% if d.download.mods_tested %} {{ d.download.mods_tested }} mod{{ "s" if d.download.mods_tested != 1 }} ran without errors in an offline test container.{% endif %}</p>
+  {% if d.assigned %}
+  <p><strong>Assigned to Custom.</strong> Load it from the <a href="/switch">Models</a> page. Clients use the model name <code>custom</code> or <code>{{ d.spec.served_name }}</code>.</p>
+  <form method="post" action="/custom/{{ d.id }}/unassign" class="buttons" data-confirm="Unassign {{ d.name }}? Custom has no model until you assign another recipe.">
+    <input type="hidden" name="csrf" value="{{ s.csrf }}">
+    <button type="submit" class="secondary"{% if custom_busy %} disabled title="Switch to Fast or Quality first"{% endif %}>Unassign</button></form>
+  {% else %}
+  <form method="post" action="/custom/{{ d.id }}/assign" class="buttons" data-confirm="Assign {{ d.name }} to Custom? It replaces the recipe Custom has now, and Custom's settings go back to this recipe's values.">
+    <input type="hidden" name="csrf" value="{{ s.csrf }}">
+    <button type="submit"{% if custom_busy %} disabled title="Custom is loaded: switch to Fast or Quality first"{% endif %}>Assign to Custom</button>
+    {% if custom_busy %}<small class="muted">Custom is loaded; switch to Fast or Quality first.</small>{% endif %}</form>
+  {% endif %}
+{% endif %}
+</section>

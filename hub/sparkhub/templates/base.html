@@ -1,0 +1,41 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="htmx-config" content='{"includeIndicatorStyles": false, "allowEval": false, "allowScriptTags": false}'>
+<title>{% block title %}SparkHub{% endblock %}</title>
+<meta name="theme-color" content="#17012e">
+<link rel="stylesheet" href="/static/app.css">
+{% block head %}{% endblock %}
+<script src="/static/vendor/htmx.min.js" defer></script>
+<script src="/static/confirm.js" defer></script>
+</head>
+<body{% if s %} hx-headers='{"X-CSRF-Token": "{{ s.csrf }}"}'{% endif %}>
+{% if s %}
+<header class="top">
+  <a class="brand" href="/">{% include "_logo.html" %}<span>SparkHub</span></a>
+  {% include "_badge.html" %}
+  <nav>
+    {% for href, label in nav %}
+    <a href="{{ href }}"{% if path == href %} aria-current="page"{% endif %}>{{ label }}</a>
+    {% endfor %}
+    {% if chat_on %}<a href="/chat/">Chat</a>{% endif %}
+    {% if s.is_admin %}
+    <a href="/grafana/">Grafana</a>
+    {% if cfg.arcane %}<a href="/arcane/">Arcane</a>{% endif %}
+    {% if cfg.nvidia_dashboard %}<a href="/nvidia/">NVIDIA</a>{% endif %}
+    {% endif %}
+  </nav>
+  <form method="post" action="/logout" class="logout">
+    <input type="hidden" name="csrf" value="{{ s.csrf }}">
+    <button type="submit" class="link">Log out {{ s.username }}</button>
+  </form>
+</header>
+{% endif %}
+<main>
+{% if update %}<p class="warn" role="status">SparkHub <a href="{{ update.url }}" target="_blank" rel="noopener noreferrer">{{ update.tag }}</a> is available (this install runs {{ cfg.version }}). To upgrade, run <code>./install.sh upgrade</code> on the Spark. <a href="/settings?tab=updates">Details</a></p>{% endif %}
+{% block main %}{% endblock %}
+</main>
+</body>
+</html>

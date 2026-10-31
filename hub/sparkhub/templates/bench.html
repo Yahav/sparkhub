@@ -1,0 +1,76 @@
+{% extends "base.html" %}
+{% block title %}Benchmarks · SparkHub{% endblock %}
+{% block main %}
+<h1>Benchmarks</h1>
+{% if msg %}<p class="ok">{{ msg }}</p>{% endif %}
+{% if error %}<p class="error" role="alert">{{ error }}</p>{% endif %}
+<p class="muted">Measures a model the same way every time, so Fast, Quality and a Custom recipe can be compared. While a run is going, the hub loads the run's model if needed, refuses switching and answers every other client with "benchmark running" until it ends. Runs never overlap.</p>
+<p class="muted">Suites and tools: <a href="https://github.com/laude-institute/terminal-bench-2" target="_blank" rel="noopener noreferrer">Terminal-Bench 2.0</a> (run with <a href="https://github.com/harbor-framework/harbor" target="_blank" rel="noopener noreferrer">Harbor</a>, agent <a href="https://github.com/sst/opencode" target="_blank" rel="noopener noreferrer">opencode</a>) · <a href="https://github.com/TIGER-AI-Lab/MMLU-Pro" target="_blank" rel="noopener noreferrer">MMLU-Pro</a> · <a href="https://github.com/hendrycks/test" target="_blank" rel="noopener noreferrer">MMLU</a> · <a href="https://github.com/google-research/google-research/tree/master/instruction_following_eval" target="_blank" rel="noopener noreferrer">IFEval</a> · <a href="https://github.com/suzgunmirac/BIG-Bench-Hard" target="_blank" rel="noopener noreferrer">BIG-Bench Hard</a> (the four test sets run with <a href="https://github.com/EleutherAI/lm-evaluation-harness" target="_blank" rel="noopener noreferrer">lm-evaluation-harness</a>)</p>
+
+<div id="bench-live" hx-get="/ui/bench" hx-trigger="every 5s" hx-swap="innerHTML">
+{% include "_bench_live.html" %}
+</div>
+
+<form class="panel addform" method="post" action="/bench/start">
+  <input type="hidden" name="csrf" value="{{ s.csrf }}">
+  <h2>Run a benchmark</h2>
+  {% if not bench_modes %}
+  <p class="muted">No model is set up.</p>
+  {% else %}
+  <label class="row"><span>Model</span>
+    <select name="mode">{% for m in bench_modes %}<option value="{{ m }}"{% if m == loaded %} selected{% endif %}>{{ labels[m] }}{% if m == loaded %} (loaded){% endif %} · about {{ estimates[m]|span }}</option>{% endfor %}</select>
+  </label>
+  <fieldset class="row"><legend>Always</legend>
+    {% for k in always %}<label class="check"><input type="checkbox" checked disabled> {{ suites[k].label }}</label>{% endfor %}
+    <small class="muted">Speed: tokens per second and time to first token at 1, 2 and 4 requests at once. Terminal-Bench: 15 real terminal tasks (sysadmin, git, databases, security, code), 4 agents at once.</small>
+  </fieldset>
+  <fieldset class="row"><legend>Optional (long)</legend>
+    {% for k in optional %}<label class="check"><input type="checkbox" name="suite" value="{{ k }}"> {{ suites[k].label }} <span class="muted">· ~{{ suites[k].est_s|span }} on Fast</span></label>{% endfor %}
+    <small class="muted">All 53 Terminal-Bench tasks replace the 15. Thinking off only means something for models that have a thinking mode.</small>
+  </fieldset>
+  <label class="row"><span>Agents may use the internet</span><input type="checkbox" name="internet">
+    <small class="muted">Off: Terminal-Bench agents reach this hub and the package registries (apt, PyPI, npm, Go, crates.io, Maven) to install tools, but no other site, so they can't look up solutions. Results with and without internet are not compared with each other.</small></label>
+  <fieldset class="row"><legend>Start</legend>
+    <label class="check"><input type="radio" name="when" value="now" checked> now</label>
+    <label class="check"><input type="radio" name="when" value="at"> at <input type="datetime-local" name="at" aria-label="Start date and time"></label>
+    <small class="muted">At the start time the hub loads the model if another one is loaded. The estimate covers loading and every suite; it gets better after the first run of each model.</small>
+  </fieldset>
+  <div class="buttons"><button type="submit" data-confirm="Start or schedule this benchmark? While it runs, every other client is refused.">Schedule</button></div>
+  {% endif %}
+</form>
+
+<h2>Compare</h2>
+{% if compare %}
+<div class="scroll"><table>
+<thead><tr><th>Model</th><th>Run</th><th>Internet</th><th>Single stream</th><th>Per stream at 4</th><th>First token (2k / 16k)</th><th>Terminal-Bench 15</th><th>Terminal-Bench 53</th><th>Knowledge</th><th>BBH</th><th>BBH no-think</th></tr></thead>
+<tbody>{% for r in compare %}{% set h = r.headline %}
+<tr><td>{{ r.model_label }}<br><small class="muted">{{ r.mode }} · {{ r.fingerprint }}</small></td>
+<td><a href="/bench/{{ r.id }}">#{{ r.id }}</a><br><small class="muted">{{ r.finished_at|ts }}</small></td>
+<td>{{ "on" if r.internet else "off" }}</td>
+<td>{{ h.single_tps or "–" }}{% if h.single_tps %} tok/s{% endif %}</td>
+<td>{{ h.per_stream_tps_4 or "–" }}{% if h.per_stream_tps_4 %} tok/s{% endif %}</td>
+<td>{% if h.ttft_2k_s is not none %}{{ "%.2f"|format(h.ttft_2k_s) }} / {{ "%.2f"|format(h.ttft_16k_s or 0) }} s{% else %}–{% endif %}</td>
+<td>{% if h.tb2_quick %}{{ h.tb2_quick[0] }}/{{ h.tb2_quick[1] }}{% else %}–{% endif %}</td>
+<td>{% if h.tb2_full %}{{ h.tb2_full[0] }}/{{ h.tb2_full[1] }}{% else %}–{% endif %}</td>
+{% for k in ("s2", "s6", "s6-nothink") %}<td>{% if h[k] is defined and h[k] is not none %}{{ "%.1f"|format(h[k] * 100) }}%{% else %}–{% endif %}</td>{% endfor %}
+</tr>{% endfor %}</tbody></table></div>
+<p class="muted">The newest finished run of each model and setting. A model changes when its image, command or settings change. Terminal-Bench has 1 attempt per task, so one task is 7 points of 15: differences of one or two tasks are noise.</p>
+{% else %}
+<p class="muted">No finished runs yet. Run one on Fast and one on Quality first: they are the baselines a Custom model is compared with.</p>
+{% endif %}
+
+<h2>History</h2>
+{% if history %}
+<div class="scroll"><table>
+<thead><tr><th>Run</th><th>Model</th><th>Suites</th><th>Start</th><th>Status</th><th>Result</th></tr></thead>
+<tbody>{% for r in history %}
+<tr><td><a href="/bench/{{ r.id }}">#{{ r.id }}</a></td><td>{{ r.model_label }}</td>
+<td><small>{% for k in r.suites %}{{ suites[k].label }}{% if not loop.last %}, {% endif %}{% endfor %}</small></td>
+<td>{{ (r.started_at or r.start_at)|ts }}</td>
+<td>{% if r.status == "failed" %}<span class="errword">failed</span>{% elif r.status in ("running", "starting") %}<strong>{{ r.status }}</strong>{% else %}{{ r.status }}{% endif %}</td>
+<td><small>{% if r.error %}<span class="muted">{{ r.error[:120] }}</span>{% else %}{{ bench.summary_line(r.results) if r.results else "–" }}{% endif %}</small></td></tr>
+{% endfor %}</tbody></table></div>
+{% else %}
+<p class="muted">Nothing yet.</p>
+{% endif %}
+{% endblock %}

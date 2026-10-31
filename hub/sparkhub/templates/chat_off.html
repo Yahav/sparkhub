@@ -1,0 +1,10 @@
+{% extends "base.html" %}
+{% block title %}Chat is off · SparkHub{% endblock %}
+{% block main %}
+<h1>Chat is off</h1>
+{% if installed %}
+<p>The chat at /chat/ is turned off. An admin can turn it on under {% if s.is_admin %}<a href="/settings?tab=chat">Settings → Chat</a>{% else %}Settings → Chat{% endif %}; the history is kept.</p>
+{% else %}
+<p>chat-ui is not installed on this hub (CHATUI in sparkhub.conf, then ./install.sh).</p>
+{% endif %}
+{% endblock %}

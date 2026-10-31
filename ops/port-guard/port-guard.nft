@@ -1,0 +1,32 @@
+# Guarded ports: reachable from the LAN, Tailscale and this machine only; dropped from the internet.
+# The NAT forwards these ports, so anything listening on them would otherwise be public at once.
+# Covers programs on the host (input) and Docker-published ports (forward: Docker's DNAT rewrites the
+# destination, so the original port is matched with conntrack). Own table; touches no other rules.
+# To make a port public for a specific service: remove it from @guarded and reload (see README.md).
+table inet port_guard
+delete table inet port_guard
+table inet port_guard {
+  set guarded {
+    type inet_service
+    elements = { 8000 }
+  }
+  set trusted4 {
+    type ipv4_addr; flags interval
+    elements = { 192.168.0.0/16, 100.64.0.0/10, 127.0.0.0/8 }
+  }
+  chain input {
+    type filter hook input priority filter; policy accept;
+    tcp dport @guarded ct state established,related accept
+    tcp dport @guarded iifname { "lo", "tailscale0" } accept
+    tcp dport @guarded ip saddr @trusted4 accept
+    tcp dport @guarded ip6 saddr fe80::/10 accept
+    tcp dport @guarded counter drop comment "guarded port, host"
+  }
+  chain forward {
+    type filter hook forward priority filter; policy accept;
+    ct state established,related accept
+    ct original proto-dst @guarded iifname "tailscale0" accept
+    ct original proto-dst @guarded ip saddr @trusted4 accept
+    meta l4proto tcp ct original proto-dst @guarded counter drop comment "guarded port, docker-published"
+  }
+}

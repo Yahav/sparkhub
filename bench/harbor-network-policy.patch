@@ -1,0 +1,21 @@
+--- a/bin/network-policy
++++ b/bin/network-policy
+@@ -39,7 +39,18 @@
+ # has. Hostname allowlisting still happens in gost via SNI.
+ nft_dns_rules() {
+   action="$1"
++  # SparkHub patch (2026-10-15): Docker's embedded resolver (127.0.0.11) forwards queries to its
++  # upstream servers from inside the container netns; with a systemd-resolved host those are listed only
++  # as "# ExtServers: [8.8.8.8 1.1.1.1]". Allow DNS to them too, or every hostname fails to resolve.
+   awk -v action="$action" '
++    /^# ExtServers:/ {
++      line = $0; sub(/^# ExtServers:[[:space:]]*\[/, "", line); sub(/\].*$/, "", line)
++      n = split(line, ext, /[[:space:]]+/)
++      for (i = 1; i <= n; i++) if (ext[i] ~ /^[0-9]+\.[0-9]+\.[0-9]+\.[0-9]+$/) {
++        printf "    ip daddr %s udp dport 53 %s\n", ext[i], action
++        printf "    ip daddr %s tcp dport 53 %s\n", ext[i], action
++      }
++    }
+     /^nameserver[[:space:]]+/ {
+       ns = $2
+       sub(/%.*/, "", ns)

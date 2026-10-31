@@ -1,0 +1,44 @@
+{% extends "base.html" %}
+{% block title %}Account · SparkHub{% endblock %}
+{% block main %}
+<h1>Account</h1>
+{% if msg %}<p class="ok">{{ msg }}</p>{% endif %}
+{% if error %}<p class="error" role="alert">{{ error }}</p>{% endif %}
+<table class="facts">
+<tbody>
+<tr><th>User</th><td>{{ me.username }}</td></tr>
+<tr><th>Role</th><td>{{ role_labels[me.role] }} <span class="muted">{% if me.role == "admin" %}everything{% elif me.role == "switch" %}use the models and switch the mode{% else %}use the models{% endif %}</span></td></tr>
+<tr><th>2FA</th><td>{{ "on" if me.totp_enabled else "not set up" }} · {{ me.recovery_left }} recovery codes left</td></tr>
+<tr><th>Last login</th><td>{{ me.last_login_at|ago }}</td></tr>
+</tbody></table>
+
+<div class="modecards">
+<form class="modecard" method="post" action="/account/password">
+  <input type="hidden" name="csrf" value="{{ s.csrf }}">
+  <h2>Change my password</h2>
+  <label class="row"><span>Current</span><input type="password" name="current" autocomplete="current-password" required></label>
+  <label class="row"><span>New (12+ characters)</span><input type="password" name="new" autocomplete="new-password" required minlength="12"></label>
+  <label class="row"><span>Again</span><input type="password" name="again" autocomplete="new-password" required minlength="12"></label>
+  <div class="buttons"><button type="submit">Change password</button></div>
+  <p class="muted">All your sessions end; you log in again.</p>
+</form>
+<form class="modecard" method="post" action="/account/recovery">
+  <input type="hidden" name="csrf" value="{{ s.csrf }}">
+  <h2>Recovery codes</h2>
+  <p>Make 10 new codes. The old ones stop working.</p>
+  <div class="buttons"><button type="submit" class="secondary">New recovery codes</button></div>
+</form>
+</div>
+
+<h2>My sessions</h2>
+<table><thead><tr><th>Status</th><th>From</th><th>Started</th><th>Last seen</th><th>Ends</th><th>Browser</th><th></th></tr></thead><tbody>
+{% for x in sessions %}<tr><td>{{ "logged in" if x.stage == "full" else "waiting for 2FA" }}{% if x.current %} <span class="pill">this one</span>{% endif %}</td><td>{{ x.ip }}</td><td>{{ x.created_at|ts }}</td><td>{{ x.last_seen|ago }}</td>
+<td>{{ x.expires_at|ts }}{% if x.remember %} <span class="muted">(remembered)</span>{% else %} <span class="muted">or 12 h idle</span>{% endif %}</td><td class="muted trunc">{{ x.ua }}</td>
+<td><form method="post" action="/sessions/{{ x.rid }}/end" class="inline" data-confirm="{% if x.current %}End this session? You are logged out here.{% else %}End this session from {{ x.ip }}? That browser is logged out.{% endif %}"><input type="hidden" name="csrf" value="{{ s.csrf }}"><button type="submit" class="danger small">End session</button></form></td></tr>{% endfor %}
+</tbody></table>
+
+<h2>My recent login events</h2>
+<table><thead><tr><th>When</th><th>Event</th><th>By</th><th>Detail</th></tr></thead><tbody>
+{% for e in logins %}<tr{% if e.kind in ("login_failed", "account_locked") %} class="warnrow"{% endif %}><td>{{ e.ts|ts("%m-%d %H:%M:%S") }}</td><td>{{ e.kind }}</td><td>{{ e.actor }}</td><td class="muted">{% for k, v in e.detail.items() if k != "username" %}{{ k }}={{ v }} {% endfor %}</td></tr>{% else %}<tr><td colspan="4" class="muted">None yet.</td></tr>{% endfor %}
+</tbody></table>
+{% endblock %}

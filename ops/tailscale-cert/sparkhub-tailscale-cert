@@ -1,0 +1,16 @@
+#!/bin/sh
+# Fetch or renew the Tailscale certificate for the tailnet name into SparkHub's data/tls, and reload nginx when it
+# changed. NAME, DIR, OWNER (uid:gid) and NGINX (container) come from /etc/default/sparkhub-tailscale-cert, written by
+# ./install.sh. Runs daily (sparkhub-tailscale-cert.timer); tailscale keeps its own copy and only asks Let's Encrypt
+# again when renewal is due, so most runs change nothing.
+set -eu
+. /etc/default/sparkhub-tailscale-cert
+tmp=$(mktemp -d); trap 'rm -rf "$tmp"' EXIT
+tailscale cert --cert-file "$tmp/crt" --key-file "$tmp/key" "$NAME"
+if cmp -s "$tmp/crt" "$DIR/tailscale.crt" && cmp -s "$tmp/key" "$DIR/tailscale.key"; then
+  exit 0
+fi
+install -m 600 -o "${OWNER%:*}" -g "${OWNER#*:}" "$tmp/key" "$DIR/tailscale.key"
+install -m 644 -o "${OWNER%:*}" -g "${OWNER#*:}" "$tmp/crt" "$DIR/tailscale.crt"
+echo "certificate for $NAME updated: $(openssl x509 -in "$DIR/tailscale.crt" -noout -enddate)"
+docker exec "$NGINX" nginx -s reload 2>/dev/null || echo "nginx not running; it picks the certificate up on start"

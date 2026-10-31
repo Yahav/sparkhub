@@ -1,0 +1,122 @@
+{% extends "base.html" %}
+{% block title %}Settings · SparkHub{% endblock %}
+{% block main %}
+<h1>Settings</h1>
+{% if saved %}<p class="ok">Saved ({{ saved }}).{% if saved in modes %} Applies on the next load of {{ saved }}.{% endif %}</p>{% endif %}
+{% if error %}<p class="error" role="alert">{{ error }}</p>{% endif %}
+{% set labels = {"models": "Generative Models", "embeddings": "Embeddings", "hub": "Hub", "chat": "Chat", "notifications": "Notifications", "updates": "Updates"} %}
+<nav class="tabs" aria-label="Settings sections">{% for t in tabs %}
+  <a href="/settings?tab={{ t }}" id="tab-{{ t }}"{% if t == tab %} aria-current="page"{% endif %}>{{ labels[t] }}</a>
+{% endfor %}</nav>
+
+<section class="tabpanel" aria-labelledby="tab-models"{% if tab != "models" %} hidden{% endif %}>
+<div class="modecards">
+{% for it in items %}
+<form class="modecard" method="post" action="/settings/{{ it.name }}">
+  <input type="hidden" name="csrf" value="{{ s.csrf }}">
+  <h2>{{ it.preset.title }} <span class="muted">{{ it.preset.served_name }}</span></h2>
+  <p class="muted">Changes apply on the next load of this mode. Highlighted values differ from the {% if it.preset.origin == "recipe" %}imported recipe (<a href="/custom/{{ it.preset.raw.recipe_id }}">review page</a>){% else %}benchmark recipe{% endif %}.</p>
+  {% for k, rule in rules.items() %}{% set v = it.settings[k] %}{% set typ = rule[0].__name__ %}
+  {% if k in it.preset.unused_settings %}
+  <div class="row"><span>{{ help[k] }}</span><span class="muted">not used</span>
+    <small class="muted">{{ it.preset.raw.unused_note or "this recipe has no such option" }}</small></div>
+  {% else %}
+  <label class="row{% if k in it.overrides %} changed{% endif %}"><span>{{ help[k] }}</span>
+    {% if typ == "bool" %}
+      <input type="checkbox" name="{{ k }}"{% if v %} checked{% endif %}>
+    {% elif rule[1] is sequence and rule[1][0] is string %}
+      <select name="{{ k }}">{% for o in rule[1] %}<option{% if o == v %} selected{% endif %}>{{ o }}</option>{% endfor %}</select>
+    {% else %}
+      <input name="{{ k }}" value="{{ v }}" inputmode="decimal" size="8">
+    {% endif %}
+    <small class="muted">default {{ it.preset.defaults[k] }}{% if rule[1] and typ != "bool" and not (rule[1][0] is string) %} · {{ rule[1][0] }}–{{ rule[1][1] }}{% endif %}</small>
+  </label>
+  {% endif %}
+  {% endfor %}
+  <div class="buttons">
+    <button type="submit" name="action" value="save">Save {{ it.name }}</button>
+    <button type="submit" name="action" value="reset" class="secondary">Reset to recipe</button>
+  </div>
+</form>
+{% endfor %}
+</div>
+</section>
+
+<section class="tabpanel" aria-labelledby="tab-embeddings"{% if tab != "embeddings" %} hidden{% endif %}>
+<form class="panel" method="post" action="/settings-embed">
+  <input type="hidden" name="csrf" value="{{ s.csrf }}">
+  <h2>Embeddings <span class="muted">/v1/embeddings · /v1/rerank</span></h2>
+  {% if not embed.installed %}
+  <p class="muted">Not installed on this hub. Set EMBEDDINGS=1 in sparkhub.conf and run ./install.sh.</p>
+  {% else %}
+  <p class="muted">An embedding model and a reranker next to the chat model, for any client that searches its own documents. Stateless: the hub stores no texts or vectors. Large embedding requests wait while chat requests are running (at most {{ embed.hold_s }} s); small ones go straight through.</p>
+  <label class="row"><span>Run mode</span>
+    <select name="mode">{% for k, label in embed_modes.items() %}<option value="{{ k }}"{% if k == embed.run_mode %} selected{% endif %}>{{ label }}</option>{% endfor %}</select>
+    <small class="muted">always on: no start-up delay, uses its memory all the time · on-demand: starts on the first request (~2 s) · off: requests are refused</small></label>
+  <label class="row"><span>On-demand: stop after (min) without a request</span><input name="idle_minutes" value="{{ embed.idle_minutes }}" inputmode="numeric" size="8"></label>
+  <label class="row"><span>Enable reranker</span><input type="checkbox" name="rerank"{% if embed.rerank_enabled %} checked{% endif %}>
+    <small class="muted">unticked: the reranker is shut down and /v1/rerank requests are refused · note: the reranker is always on-demand, whatever the run mode (starts on the first /v1/rerank request, ~2 s; stops when idle)</small></label>
+  {% for name, sv in embed.services.items() %}
+  <div class="row"><span>{{ sv.title }} <span class="muted">{{ sv.served_name }}</span></span>
+    <span><span class="dot state-{{ {'ready': 'ready', 'starting': 'loading', 'failed': 'failed'}.get(sv.state, 'idle') }}"></span>{{ sv.state }}{% if sv.state == "ready" and sv.mem_gib %} · ~{{ sv.mem_gib }} GiB{% endif %}</span>
+    <small class="muted">{{ sv.model }} · {{ sv.endpoint }} · {{ embed_modes[sv.policy] }}{% if sv.last_used %} · last request {{ sv.last_used|ago }}{% endif %}{% if sv.error %} · <span class="errword">{{ sv.error }}</span>{% endif %}</small></div>
+  {% endfor %}
+  <div class="buttons"><button type="submit">Save embeddings</button></div>
+  {% endif %}
+</form>
+</section>
+
+<section class="tabpanel" aria-labelledby="tab-hub"{% if tab != "hub" %} hidden{% endif %}>
+<form class="panel" method="post" action="/settings-hub">
+  <input type="hidden" name="csrf" value="{{ s.csrf }}">
+  <h2>Hub</h2>
+  {% for k, label in [("activity_window_s", "A client counts as active for (s) after its last request"), ("drain_quiet_s", "Drain: switch after this many quiet seconds"), ("drain_timeout_s", "Drain: give up after (s)"), ("key_max_concurrency", "Concurrent requests per API key (default)"), ("queue_timeout_s", "Max wait for a key's slot (s)"), ("load_timeout_s", "Model load timeout (s)"), ("activity_retention_days", "Keep the request log (days)")] %}
+  <label class="row"><span>{{ label }}</span><input name="{{ k }}" value="{{ hub_settings[k] }}" inputmode="numeric" size="8"></label>
+  {% endfor %}
+  <div class="buttons"><button type="submit">Save hub settings</button></div>
+</form>
+</section>
+{% if chat.installed %}
+<section class="tabpanel" aria-labelledby="tab-chat"{% if tab != "chat" %} hidden{% endif %}>
+<form class="panel" method="post" action="/settings-chat">
+  <input type="hidden" name="csrf" value="{{ s.csrf }}">
+  <h2>Chat <span class="muted">chat-ui at /chat/</span></h2>
+  <p class="muted">A ChatGPT-style web chat for the hub's users, signed in with the hub login. Each user has their own history. It uses the loaded model (auto); turning it off stops its container and closes /chat/, and keeps the history.</p>
+  <label class="row"><span>Chat on</span><input type="checkbox" name="enabled"{% if chat.enabled %} checked{% endif %}>
+    <small class="muted">container: {{ chat.state or "not found (run ./install.sh)" }}</small></label>
+  <div class="buttons"><button type="submit">Save chat</button></div>
+</form>
+</section>
+{% endif %}
+<section class="tabpanel" aria-labelledby="tab-notifications"{% if tab != "notifications" %} hidden{% endif %}>
+<form class="panel" method="post" action="/settings-notify">
+  <input type="hidden" name="csrf" value="{{ s.csrf }}">
+  <h2>Notifications <span class="muted">ntfy</span></h2>
+  <p class="muted">Push notifications from the hub (model crashed or restarted, switch or backup failed, a stack container such as Grafana down for a minute, started/ready) and from Grafana's alert rules. Subscribe to the topic in the ntfy app. Anyone who knows the topic can read the notifications, so use a long random one.</p>
+  <label class="row"><span>Send notifications</span><input type="checkbox" name="enabled"{% if ntfy.enabled %} checked{% endif %}></label>
+  <label class="row"><span>High priority only</span><input type="checkbox" name="high_only"{% if ntfy.high_only %} checked{% endif %}>
+    <small class="muted">keeps crashes, failures and Grafana alerts; drops "started", "ready" and "model back"</small></label>
+  <label class="row"><span>Server</span><input name="server" value="{{ ntfy.server }}" size="28" autocomplete="off"></label>
+  <label class="row"><span>Topic</span><input name="topic" value="" size="28" autocomplete="off" spellcheck="false" placeholder="{% if ntfy.has_topic %}current: {{ ntfy.topic }} (leave empty to keep){% else %}not set{% endif %}">
+    <small class="muted">letters, digits, - and _</small></label>
+  <div class="buttons">
+    <button type="submit" name="action" value="save">Save notifications</button>
+    <button type="submit" name="action" value="test" class="secondary"{% if not ntfy.has_topic %} disabled{% endif %}>Send test</button>
+    {% if ntfy.has_topic %}<button type="submit" name="action" value="clear" class="secondary">Remove topic</button>{% endif %}
+  </div>
+</form>
+</section>
+<section class="tabpanel" aria-labelledby="tab-updates"{% if tab != "updates" %} hidden{% endif %}>
+<form class="panel" method="post" action="/settings-updates">
+  <input type="hidden" name="csrf" value="{{ s.csrf }}">
+  <h2>Updates <span class="muted">this install runs {{ cfg.version }}</span></h2>
+  <p class="muted">Once a day the hub asks GitHub for the newest SparkHub release (<code>{{ cfg.update_repo }}</code>). Nothing about this install is sent. A newer release shows a notice to admins and sends one notification. Upgrading runs on the Spark, over SSH: <code>./install.sh upgrade</code> shows the release notes, backs up the database, downloads what the release needs and restarts what changed. A model whose pinned version changed reloads during the upgrade (~4–5 min).</p>
+  <label class="row"><span>Check for new releases</span><input type="checkbox" name="enabled"{% if hub_settings.update_check %} checked{% endif %}></label>
+  <p class="muted">{% if latest.checked_at %}Last checked {{ latest.checked_at|ts }}{% if latest.error %}: <span class="errword">failed</span> ({{ latest.error }}){% endif %}.{% if latest.tag %} Newest release: <a href="{{ latest.url }}" target="_blank" rel="noopener noreferrer">{{ latest.tag }}</a>{% if latest.published_at %} ({{ latest.published_at[:10] }}){% endif %}{% if update %}, newer than this install{% else %}, this install is up to date{% endif %}.{% endif %}{% else %}Not checked yet.{% endif %}</p>
+  <div class="buttons">
+    <button type="submit" name="action" value="save">Save</button>
+    <button type="submit" name="action" value="check" class="secondary">Check now</button>
+  </div>
+</form>
+</section>
+{% endblock %}

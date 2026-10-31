@@ -1,0 +1,66 @@
+{% if oob %}{% include "_badge.html" %}{% endif %}
+{% if error %}
+<div class="error" role="alert">
+  <p><strong>{{ error.error }}</strong></p>
+  {% if error.active %}<ul>{% for c in error.active %}<li>{{ c.name }}: {{ c.inflight }} in flight, last request {{ c.idle_s|dur }} ago</li>{% endfor %}</ul>
+  <p>Use <em>Drain and switch</em> to wait until they are quiet, or <em>Force</em> to cut them off.</p>{% endif %}
+</div>
+{% endif %}
+{% if result %}<p class="ok">{{ result.result }}{% if result.mode %}: {{ result.mode }}{% endif %}{% if result.drain %} (draining first){% endif %}</p>{% endif %}
+
+{% if st.switch %}
+<div class="tile wide state-{{ st.state }}">
+  <div class="label">{{ st.state }}</div>
+  <div class="value">{% if st.state in ("loading", "draining", "stopping") %}<span class="spinner" role="status" aria-label="{{ st.state }}"></span>{% endif %}→ {{ st.switch.target }}</div>
+  {% set pct = [100, (100 * st.switch.elapsed_s / (st.switch.expected_load_s or 300))|int]|min %}
+  <div class="progress" role="progressbar" aria-valuenow="{{ pct }}" aria-valuemin="0" aria-valuemax="100"><span class="w{{ (pct // 5) * 5 }}"></span></div>
+  <div class="sub">{{ st.message }} · {{ st.switch.elapsed_s|dur }} elapsed, a load takes ~{{ st.switch.expected_load_s|dur }}{% if st.switch.attempt > 1 %} · attempt {{ st.switch.attempt }}{% endif %}</div>
+  {% if st.drain %}<div class="sub">quiet for {{ st.drain.quiet_s|dur }} of {{ st.drain.needed_s|dur }} needed</div>{% endif %}
+  {% if st.switch.cancellable %}
+  <form hx-post="/ui/switch" hx-target="#switch" class="inline"><input type="hidden" name="action" value="cancel">
+    <button type="submit" class="secondary">Cancel and keep {{ st.switch.previous or "the old mode" }}</button></form>
+  {% endif %}
+</div>
+{% endif %}
+
+{% if active and not st.switch %}
+<div class="warn">
+  <p><strong>{{ active|length }} client(s) active in the last {{ window_min }} min</strong>: switching now would break them.</p>
+  <ul>{% for c in active %}<li>{{ c.name }}: {{ c.inflight }} in flight, last request {{ c.idle_s|dur }} ago</li>{% endfor %}</ul>
+</div>
+{% endif %}
+
+<div class="modecards">
+{% for m in modes %}{% if m not in presets %}
+  <div class="modecard empty">
+    <h2>Custom</h2>
+    <p class="muted">No recipe assigned. {% if s.is_admin %}Pick, review and download one <a href="#custom">below</a>.{% else %}An admin can set one up.{% endif %}</p>
+  </div>
+{% else %}{% set p = presets[m] %}{% set cur = st.mode == m %}
+  <div class="modecard{% if cur %} current{% endif %}">
+    <h2>{{ p.title }}{% if cur %} <span class="pill">loaded</span>{% endif %}</h2>
+    <p>{{ p.raw.model }}</p>
+    {% if p.raw.recipe_credit %}{% set rc = p.raw.recipe_credit %}<p class="credit">Recipe by <a href="{{ rc.url }}" target="_blank" rel="noopener noreferrer">{{ rc.author }}</a> · {{ rc.name }}</p>{% endif %}
+    {% if p.origin == "recipe" %}
+    <p class="muted">served as <code>{{ p.served_name }}</code> · {% if p.expected.measured %}measured: loads in ~{{ p.expected.load_seconds|dur }} · {{ p.expected.mem_used_gib }} GiB{% else %}not loaded yet · estimated ~{{ p.expected.mem_used_gib }} GiB{% endif %}{% if s.is_admin %} · <a href="/custom/{{ p.raw.recipe_id }}">recipe</a>{% endif %}</p>
+    {% else %}
+    <p class="muted">bench: {{ p.expected.tok_s_single }} tok/s single, ~{{ p.expected.tok_s_per_agent_4 }} per agent with 4; loads in ~{{ p.expected.load_seconds|dur }}; {{ p.expected.mem_used_gib }} GiB</p>
+    {% endif %}
+    {% if st.install[m] and not cur %}
+    <p class="warn">Not ready to load: {{ st.install[m]|join("; ") }}</p>
+    {% elif not cur and not st.switch %}
+    <form hx-post="/ui/switch" hx-target="#switch" class="buttons"
+          {% if active %}hx-confirm="Clients are active. Continue?"{% endif %}>
+      <input type="hidden" name="mode" value="{{ m }}">
+      {% if not active %}
+        <button type="submit" name="action" value="switch">Switch to {{ m }}</button>
+      {% else %}
+        <button type="submit" name="action" value="drain">Drain and switch</button>
+        <button type="submit" name="action" value="force" class="danger">Force now</button>
+      {% endif %}
+    </form>
+    {% endif %}
+  </div>
+{% endif %}{% endfor %}
+</div>
+{% if st.last_switch %}<p class="muted">Last switch: {{ st.last_switch.from or "none" }} → {{ st.last_switch.to }}, {{ st.last_switch.result }}, {{ st.last_switch.seconds|dur }}, by {{ st.last_switch.by }} {{ st.last_switch.at|ago }}{% if st.last_switch.error %} · {{ st.last_switch.error }}{% endif %}</p>{% endif %}

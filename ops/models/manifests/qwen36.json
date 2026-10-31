@@ -1,0 +1,72 @@
+{
+ "files": {
+  ".gitattributes": {
+   "git-sha1": "aa7aacd0134a92c3c1943fdecc75cd8b7420cce6",
+   "size": 1635
+  },
+  ".quant_summary.txt": {
+   "git-sha1": "b97d531c8e2bd7cbd1c42cbcb49f029090010251",
+   "size": 4752286
+  },
+  "README.md": {
+   "git-sha1": "0ecb54c1554791cedb4615b7ced45826b9817d19",
+   "size": 9936
+  },
+  "chat_template.jinja": {
+   "git-sha1": "a8755d827c0a7b614c246c4060dfd58ab352a8ff",
+   "size": 7764
+  },
+  "config.json": {
+   "git-sha1": "ec1f82c006fd5db6d0b5fa1a59e16fbda9a5c1dd",
+   "size": 58110
+  },
+  "configuration.json": {
+   "git-sha1": "d24dba949ee1fe70cc810e4c4709a0bddf4e06ba",
+   "size": 58
+  },
+  "generation_config.json": {
+   "git-sha1": "023756cfadf88e5bf69eefeee3e172f38c448d64",
+   "size": 202
+  },
+  "hf_quant_config.json": {
+   "git-sha1": "8deefe44cc69cfab994141ea6b9493b03c864061",
+   "size": 35085
+  },
+  "model-00001-of-00003.safetensors": {
+   "sha256": "07141c2db92e47bc08777132cd1a0323faf300eab3a7d7c111bc2bf075fda050",
+   "size": 10006877608
+  },
+  "model-00002-of-00003.safetensors": {
+   "sha256": "6dea9c759a0f941cf9e1cc1501216b0e107966a66c90425050e212efbd053f02",
+   "size": 10003595752
+  },
+  "model-00003-of-00003.safetensors": {
+   "sha256": "9758875fc55e49561165f4a44342b654c123c3e25c6811b34abb83553fb1a164",
+   "size": 3413864960
+  },
+  "model.safetensors.index.json": {
+   "sha256": "d67403a4e9793c0ba8a136baf14b3b76ec7b32c822267978084895e07ebd8a3e",
+   "size": 13726227
+  },
+  "preprocessor_config.json": {
+   "git-sha1": "2ea84a437d448ff71b08df68fdd949d5cc4ebb64",
+   "size": 390
+  },
+  "tokenizer.json": {
+   "sha256": "5f9e4d4901a92b997e463c1f46055088b6cca5ca61a6522d1b9f64c4bb81cb42",
+   "size": 12807982
+  },
+  "tokenizer_config.json": {
+   "git-sha1": "28d96ff303d1d20350185caf4bf037045916ed35",
+   "size": 16718
+  },
+  "video_preprocessor_config.json": {
+   "git-sha1": "3ba673a5ad7d4d13f54155ecd38b2a94a6dac8fe",
+   "size": 385
+  },
+  "vocab.json": {
+   "git-sha1": "0aa0ce0658d60ac4a5d609f4eadb0e8e43514176",
+   "size": 6722759
+  }
+ }
+}
